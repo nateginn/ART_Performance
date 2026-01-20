@@ -1,899 +1,370 @@
-# INSTRUCTIONS FOR CASCADE: Implement deidentify_amd_report.py
-## (Final Version - Option A with Unmatched Follow-up & Standardized Columns)
+# INSTRUCTIONS FOR CASCADE: Update compare_and_merge_amd_prompt.py
+## Add Primary Insurance Column to All Output Files
 
 ---
 
 ## Overview
 
-Cascade will create a new file `deidentify_amd_report.py` that:
-1. Loads the enhanced test CSV from `test_amd_matching.py` (contains matched/unmatched Prompt IDs)
-2. Creates TWO output files:
-   - **File 1**: `amd_deidentified_[DATE].csv` - All records (MATCHED and UNMATCHED)
-   - **File 2**: `amd_unmatched_[DATE].csv` - UNMATCHED records with Patient Names (for manual follow-up)
-3. Removes patient name and DOB columns from deidentified file
-4. Keeps Patient Account Number (renamed from Prompt_ID for consistency with Prompt naming)
-5. Generates detailed deidentification report
-6. **Does NOT modify original AMD_data Google Sheet**
+Cascade will update the existing `compare_and_merge_amd_prompt.py` file to:
+1. Extract "Case Primary Insurance" from Prompt EHR data
+2. Include it in ALL three output CSV files
+3. Place it early in column order (right after DOS for easy visibility)
+4. Enable insurance-based analysis of payment posting gaps
 
 ---
 
-## Critical Information
+## Why This Change
 
-### Input Requirements
-This script expects input from the ENHANCED `test_amd_matching.py` which includes:
-- ✅ Name and DOB normalization (uppercase, space collapse, leading zeros removed)
-- ✅ Intelligent matching (exact + close matches)
-- ✅ User-reviewed and confirmed matches via interactive review
-- ✅ Records marked as either MATCHED (has Prompt_ID) or UNMATCHED (has "UNMATCHED")
+**Business Need**: Identify which insurance companies have payment posting gaps between AMD (billing) and Prompt (clinical).
 
-### Output Files (Option A - Keep All Records)
-1. **amd_deidentified_[DATE].csv** (Primary output)
-   - ALL records (MATCHED + UNMATCHED)
-   - Patient names and DOB REMOVED
-   - Column name: "Patient Account Number" (standardized to match Prompt naming)
-   - Ready for comparison with Prompt EHR "All Data"
-
-2. **amd_unmatched_[DATE].csv** (Follow-up file)
-   - ONLY UNMATCHED records
-   - Patient names KEPT (for manual research)
-   - DOB KEPT (for manual research)
-   - For you to manually investigate later
-   - Possible new patients not yet in Prompt EHR
-
-3. **deidentification_report_[DATE].md**
-   - Detailed statistics and processing info
-   - List of unmatched patients with names for follow-up
+**Example discovery**: 
+- Insurance "ABC Insurance" shows payments in AMD but not in Prompt
+- Indicates ABC Insurance payments are being collected but not posted
+- Helps identify posting workflow issues by insurance type
 
 ---
 
-## File Location
-Create new file at: `C:\Users\growy\Dev_projects\ART_Performance\deidentify_amd_report.py`
+## Changes Required
 
----
+### Change 1: Update `create_matched_output()` method
 
-## STEP 1: Create file with imports and base class
-
-**Create a new file with this content:**
-
+**Current output columns:**
 ```python
-"""
-AMD Report Deidentification Script (Final Version - Option A)
-Removes PHI from AMD data for secure analysis.
-Creates two output files:
-1. amd_deidentified_[DATE].csv - All records, names removed, ready for merger
-2. amd_unmatched_[DATE].csv - Unmatched records with names for manual follow-up
-
-INPUT REQUIREMENT: Expects CSV from enhanced test_amd_matching.py with:
-- Normalized names and DOBs
-- User-verified Prompt_IDs
-- Records marked as MATCHED or UNMATCHED
-
-IMPORTANT: Original AMD_data Google Sheet is NOT modified.
-Only local de-identified and follow-up copies are created.
-"""
-
-import os
-import pandas as pd
-from typing import List, Tuple
-from datetime import datetime
-import glob
-
-
-class AMDDeidentifier:
-    """
-    Deidentifies AMD report by removing PHI columns.
-    Creates primary de-identified file (all records) and follow-up file (unmatched only).
-    Uses "Patient Account Number" column name for consistency with Prompt EHR.
-    """
-    
-    def __init__(self, test_csv_path: str = None):
-        """
-        Initialize the deidentifier.
-        
-        Args:
-            test_csv_path: Path to enhanced test CSV from test_amd_matching.py
-                          If None, will search for most recent test CSV
-        """
-        self.test_csv_path = test_csv_path
-        self.amd_data = None
-        self.deidentified_data = None
-        self.unmatched_data = None
-        self.columns_removed = []
-        self.columns_kept = []
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.stats = {
-            'total_records': 0,
-            'matched_records': 0,
-            'unmatched_records': 0,
-            'unmatched_patients': []
-        }
-        
-    def find_test_csv(self) -> str:
-        """
-        Find the most recent test CSV if path not provided.
-        
-        Returns:
-            str: Path to most recent test CSV, or None if not found
-        """
-        try:
-            test_csvs = glob.glob("data/amd_matching_test_*.csv")
-            
-            if not test_csvs:
-                print("ERROR: No test CSV files found in data/ folder")
-                print("REQUIRED: Run test_amd_matching.py first to generate test CSV")
-                return None
-            
-            # Get most recent file
-            most_recent = max(test_csvs, key=os.path.getctime)
-            print(f"✓ Found test CSV: {most_recent}")
-            return most_recent
-            
-        except Exception as e:
-            print(f"ERROR finding test CSV: {e}")
-            return None
-    
-    def load_test_csv(self) -> bool:
-        """
-        Load the enhanced test CSV with user-verified Prompt IDs.
-        
-        Returns:
-            bool: True if loaded successfully
-        """
-        try:
-            # If path not provided, find most recent
-            csv_path = self.test_csv_path or self.find_test_csv()
-            
-            if not csv_path or not os.path.exists(csv_path):
-                print(f"ERROR: Test CSV not found at {csv_path}")
-                print("\nPlease run test_amd_matching.py first:")
-                print("  python test_amd_matching.py")
-                return False
-            
-            print(f"\nLoading enhanced test CSV: {csv_path}")
-            self.amd_data = pd.read_csv(csv_path)
-            
-            self.stats['total_records'] = len(self.amd_data)
-            
-            print(f"✓ Loaded {len(self.amd_data)} records")
-            print(f"  Columns: {list(self.amd_data.columns)}")
-            
-            return True
-            
-        except Exception as e:
-            print(f"ERROR loading test CSV: {e}")
-            return False
-    
-    def validate_input_data(self) -> Tuple[bool, str]:
-        """
-        Validate that input CSV has Prompt_ID column (even if UNMATCHED).
-        
-        Returns:
-            Tuple[bool, str]: (is_valid, message)
-        """
-        try:
-            # Check Prompt_ID column exists
-            if 'Prompt_ID' not in self.amd_data.columns:
-                return False, "ERROR: Prompt_ID column not found. Run test_amd_matching.py first."
-            
-            # Count MATCHED vs UNMATCHED
-            matched = (self.amd_data['Prompt_ID'] != 'UNMATCHED').sum()
-            unmatched = (self.amd_data['Prompt_ID'] == 'UNMATCHED').sum()
-            
-            self.stats['matched_records'] = matched
-            self.stats['unmatched_records'] = unmatched
-            
-            print(f"✓ Input validation passed")
-            print(f"  Total records: {self.stats['total_records']}")
-            print(f"  Matched: {matched}")
-            print(f"  Unmatched: {unmatched}")
-            
-            return True, "OK"
-            
-        except Exception as e:
-            return False, f"Validation error: {e}"
-    
-    def separate_matched_and_unmatched(self) -> bool:
-        """
-        Separate data into matched and unmatched records.
-        Extract patient names from unmatched records for follow-up.
-        
-        Returns:
-            bool: True if successful
-        """
-        try:
-            print("\n--- Separating Matched and Unmatched Records ---")
-            
-            # Find unmatched records
-            unmatched_mask = self.amd_data['Prompt_ID'] == 'UNMATCHED'
-            self.unmatched_data = self.amd_data[unmatched_mask].copy()
-            
-            # Extract patient names from unmatched for follow-up
-            # Look for patient name column (various possible names)
-            patient_name_col = None
-            for col in self.amd_data.columns:
-                if 'patient' in col.lower() and 'name' in col.lower():
-                    patient_name_col = col
-                    break
-            
-            if patient_name_col and len(self.unmatched_data) > 0:
-                for idx, row in self.unmatched_data.iterrows():
-                    patient_name = row.get(patient_name_col, 'UNKNOWN')
-                    dob = row.get('Patient Birth Date', 'UNKNOWN')
-                    dos = row.get('Service Date', 'UNKNOWN')
-                    
-                    self.stats['unmatched_patients'].append({
-                        'patient_name': patient_name,
-                        'dob': dob,
-                        'dos': dos
-                    })
-            
-            print(f"✓ Separated records")
-            print(f"  Matched records: {len(self.amd_data) - len(self.unmatched_data)}")
-            print(f"  Unmatched records: {len(self.unmatched_data)}")
-            
-            return True
-            
-        except Exception as e:
-            print(f"ERROR separating records: {e}")
-            return False
-    
-    def rename_prompt_id_column(self) -> bool:
-        """
-        Rename Prompt_ID column to Patient Account Number for consistency with Prompt EHR.
-        
-        Returns:
-            bool: True if successful
-        """
-        try:
-            print("\n--- Standardizing Column Names ---")
-            
-            if 'Prompt_ID' in self.amd_data.columns:
-                self.amd_data = self.amd_data.rename(columns={'Prompt_ID': 'Patient Account Number'})
-                
-                if self.unmatched_data is not None and 'Prompt_ID' in self.unmatched_data.columns:
-                    self.unmatched_data = self.unmatched_data.rename(columns={'Prompt_ID': 'Patient Account Number'})
-                
-                print(f"✓ Renamed 'Prompt_ID' to 'Patient Account Number'")
-                print(f"  (Standardized to match Prompt EHR naming)")
-                return True
-            else:
-                print("WARNING: Prompt_ID column not found")
-                return False
-            
-        except Exception as e:
-            print(f"ERROR renaming column: {e}")
-            return False
-    
-    def identify_columns_to_remove(self) -> List[str]:
-        """
-        Identify which columns to remove (PHI columns) from deidentified file.
-        Keep Patient Account Number (was Prompt_ID).
-        
-        Removes:
-        - Patient name columns
-        - Date of birth columns
-        - Office/practice information
-        - Provider profile/information
-        
-        Returns:
-            List[str]: Column names to remove
-        """
-        try:
-            columns_to_remove = []
-            
-            # Patterns of columns to remove (PHI)
-            remove_patterns = [
-                'patient name',
-                'patient (first',
-                'birth date',
-                'dob',
-                'office key',
-                'practice name',
-                'provider profile',
-                'provider (first',
-            ]
-            
-            for col in self.amd_data.columns:
-                col_lower = col.lower()
-                
-                # Skip columns we want to keep
-                if 'patient account number' in col_lower or 'service date' in col_lower:
-                    continue
-                
-                # Check if column matches any remove pattern
-                for pattern in remove_patterns:
-                    if pattern in col_lower:
-                        if col not in columns_to_remove:
-                            columns_to_remove.append(col)
-                        break
-            
-            self.columns_removed = columns_to_remove
-            
-            if columns_to_remove:
-                print(f"\nColumns to remove (PHI):")
-                for col in columns_to_remove:
-                    print(f"  - {col}")
-            
-            return columns_to_remove
-            
-        except Exception as e:
-            print(f"ERROR identifying columns: {e}")
-            return []
-    
-    def deidentify(self) -> bool:
-        """
-        Remove PHI columns from main dataset.
-        Unmatched file keeps names for follow-up.
-        
-        Returns:
-            bool: True if successful
-        """
-        try:
-            print("\n--- Deidentifying Main Dataset ---")
-            
-            # Identify columns to remove
-            cols_to_remove = self.identify_columns_to_remove()
-            
-            # Create deidentified copy (remove PHI)
-            self.deidentified_data = self.amd_data.drop(columns=cols_to_remove, errors='ignore')
-            
-            # Store which columns we kept
-            self.columns_kept = list(self.deidentified_data.columns)
-            
-            print(f"\n✓ Deidentified main dataset")
-            print(f"  Columns removed: {len(cols_to_remove)}")
-            print(f"  Columns kept: {len(self.columns_kept)}")
-            print(f"  Final columns: {self.columns_kept}")
-            
-            # Unmatched file KEEPS patient names (for follow-up investigation)
-            print(f"\n✓ Unmatched follow-up file retains patient names for manual research")
-            
-            return True
-            
-        except Exception as e:
-            print(f"ERROR deidentifying data: {e}")
-            return False
-    
-    def validate_deidentified_data(self) -> Tuple[bool, str]:
-        """
-        Validate that deidentified data contains no PHI.
-        
-        Returns:
-            Tuple[bool, str]: (is_valid, message)
-        """
-        try:
-            # Check that Patient Account Number column exists
-            if 'Patient Account Number' not in self.deidentified_data.columns:
-                return False, "ERROR: Patient Account Number column not found"
-            
-            # Check that no patient name columns remain
-            patient_name_cols = [col for col in self.deidentified_data.columns 
-                                if 'patient' in col.lower() and 'name' in col.lower()]
-            
-            if patient_name_cols:
-                return False, f"ERROR: Patient name columns still present: {patient_name_cols}"
-            
-            # Check that no DOB columns remain
-            dob_cols = [col for col in self.deidentified_data.columns 
-                       if ('birth' in col.lower() or 'dob' in col.lower()) and 'account' not in col.lower()]
-            
-            if dob_cols:
-                return False, f"ERROR: DOB columns still present: {dob_cols}"
-            
-            return True, "All validation checks passed"
-            
-        except Exception as e:
-            return False, f"Validation error: {e}"
-    
-    def save_deidentified_csv(self) -> str:
-        """
-        Save deidentified data to CSV (all records, names removed).
-        
-        Returns:
-            str: Path to saved file
-        """
-        try:
-            output_filename = f"amd_deidentified_{self.timestamp}.csv"
-            output_path = os.path.join("data", output_filename)
-            
-            os.makedirs("data", exist_ok=True)
-            
-            self.deidentified_data.to_csv(output_path, index=False)
-            
-            print(f"\n✓ Deidentified CSV saved: {output_path}")
-            print(f"  Records: {len(self.deidentified_data)}")
-            print(f"  Columns: {len(self.deidentified_data.columns)}")
-            
-            return output_path
-            
-        except Exception as e:
-            print(f"ERROR saving deidentified CSV: {e}")
-            return ""
-    
-    def save_unmatched_csv(self) -> str:
-        """
-        Save unmatched records to separate CSV (keeps patient names for follow-up).
-        
-        Returns:
-            str: Path to saved file, or empty string if no unmatched records
-        """
-        try:
-            if len(self.unmatched_data) == 0:
-                print(f"\n✓ No unmatched records (all patients found in master list)")
-                return ""
-            
-            output_filename = f"amd_unmatched_{self.timestamp}.csv"
-            output_path = os.path.join("data", output_filename)
-            
-            os.makedirs("data", exist_ok=True)
-            
-            self.unmatched_data.to_csv(output_path, index=False)
-            
-            print(f"\n✓ Unmatched records CSV saved: {output_path}")
-            print(f"  Records: {len(self.unmatched_data)}")
-            print(f"  Note: Patient names KEPT for manual follow-up investigation")
-            
-            return output_path
-            
-        except Exception as e:
-            print(f"ERROR saving unmatched CSV: {e}")
-            return ""
-    
-    def display_sample(self, num_rows: int = 5) -> None:
-        """
-        Display sample of deidentified data (no names).
-        
-        Args:
-            num_rows: Number of rows to display
-        """
-        try:
-            print(f"\n" + "="*150)
-            print(f"SAMPLE DEIDENTIFIED DATA (First {min(num_rows, len(self.deidentified_data))} rows)")
-            print(f"No PHI - Safe for analysis and merger with Prompt EHR")
-            print("="*150)
-            
-            print(self.deidentified_data.head(num_rows).to_string())
-            
-            print("\n" + "="*150)
-            
-        except Exception as e:
-            print(f"ERROR displaying sample: {e}")
-    
-    def generate_deidentification_report(self, deidentified_path: str, unmatched_path: str) -> str:
-        """
-        Generate detailed deidentification report.
-        
-        Args:
-            deidentified_path: Path to deidentified CSV
-            unmatched_path: Path to unmatched CSV (or empty if none)
-        
-        Returns:
-            str: Markdown formatted report
-        """
-        try:
-            report = f"""# AMD Report Deidentification Report
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-## Summary
-- **Source**: amd_matching_test_*.csv (from enhanced test_amd_matching.py)
-- **Total Records Processed**: {self.stats['total_records']}
-- **Matched Records**: {self.stats['matched_records']}
-- **Unmatched Records**: {self.stats['unmatched_records']}
-
-## Processing Actions
-
-### Main Output File: `amd_deidentified_{self.timestamp}.csv`
-- **Records**: {len(self.deidentified_data)} (all records, MATCHED and UNMATCHED)
-- **Column Name Change**: "Prompt_ID" renamed to "Patient Account Number" (standardized to match Prompt EHR)
-- **PHI Removed**: 
-  - ❌ Patient names (removed)
-  - ❌ Dates of birth (removed)
-  - ❌ Office information (removed)
-  - ❌ Provider information (removed)
-- **Data Kept**:
-  - ✅ Patient Account Number (was Prompt_ID - MATCHED or UNMATCHED)
-  - ✅ Service Date
-  - ✅ Financial data (Charges, Payments, etc.)
-- **Purpose**: Ready for comparison/merger with Prompt EHR "All Data" tab
-
-### Follow-Up File: `amd_unmatched_{self.timestamp}.csv`
-"""
-            
-            if self.stats['unmatched_records'] > 0:
-                report += f"""- **Records**: {self.stats['unmatched_records']}
-- **Content**: UNMATCHED records ONLY
-- **Includes Patient Names**: YES (for manual follow-up investigation)
-- **Purpose**: Manual research and matching
-
-#### Unmatched Patients Requiring Follow-Up
-"""
-                report += "\n| Patient Name | Date of Birth | Service Date |\n"
-                report += "|---|---|---|\n"
-                
-                for patient in self.stats['unmatched_patients']:
-                    report += f"| {patient['patient_name']} | {patient['dob']} | {patient['dos']} |\n"
-                
-                report += f"""
-
-#### Possible Reasons for Unmatched Records:
-- Patient exists in AMD but not yet entered into Prompt EHR
-- Name spelling differences between AMD and Prompt
-- DOB format or entry errors
-- New patients not yet created in Prompt system
-
-#### Next Steps for Unmatched:
-1. Review list above
-2. Manually research in AMD and Prompt
-3. Identify if new patient creation needed
-4. Update master_patient_list.json once patient added to Prompt
-5. Re-run test_amd_matching.py to capture these patients
-"""
-            else:
-                report += f"""- **Records**: 0 (all patients found in master list)
-- **Status**: Perfect match - all AMD patients exist in Prompt EHR
-- **Purpose**: N/A - no follow-up needed
-"""
-            
-            report += f"""
-
-## Data Quality Checks
-✅ Patient Account Number column present and populated
-✅ All {len(self.deidentified_data)} records have Patient Account Number (MATCHED or UNMATCHED)
-✅ No patient name columns remaining in main file
-✅ No date of birth columns remaining in main file
-✅ Service Date preserved for merger with Prompt data
-✅ Financial columns preserved for comparison
-✅ Column name standardized to match Prompt EHR
-
-## Important Notes
-- **Original Source**: AMD_data Google Sheet remains **UNCHANGED**
-- **Deidentified File**: Safe for team sharing and analysis
-- **Unmatched File**: Contains names - restricted to you for manual follow-up only
-- **Merger Ready**: Deidentified CSV ready for column-matching merger with Prompt EHR "All Data"
-- **Matching Key**: Use (Patient Account Number, Service Date) to join with Prompt data
-
-## File Information
-- **Deidentified**: `amd_deidentified_{self.timestamp}.csv`
-- **Unmatched Follow-up**: `amd_unmatched_{self.timestamp}.csv`
-- **Location**: `data/` folder in ART_Performance project
-- **Shareable**: Deidentified file only (unmatched file kept for your research)
-
-## Next Steps
-1. ✅ Enhanced AMD matching with user verification completed
-2. ✅ De-identified AMD data created
-3. ✓ Review unmatched records for manual follow-up (if any)
-4. ⏳ Next script: Compare deidentified AMD with Prompt EHR "All Data"
-5. ⏳ Match on (Patient Account Number, Service Date)
-6. ⏳ Generate reconciliation and discrepancy report
-
----
-*Deidentified file contains NO Protected Health Information (PHI).*
-*Safe for analysis, review, sharing, and integration with Prompt EHR data.*
-*Unmatched file restricted for your manual research only.*
-"""
-            
-            return report
-            
-        except Exception as e:
-            print(f"ERROR generating report: {e}")
-            return ""
-    
-    def save_deidentification_report(self, report: str) -> str:
-        """
-        Save the deidentification report.
-        
-        Args:
-            report: Markdown formatted report
-            
-        Returns:
-            str: Path to saved report
-        """
-        try:
-            report_filename = f"deidentification_report_{self.timestamp}.md"
-            report_path = os.path.join("data", report_filename)
-            
-            os.makedirs("data", exist_ok=True)
-            
-            with open(report_path, 'w') as f:
-                f.write(report)
-            
-            print(f"✓ Deidentification report saved: {report_path}")
-            return report_path
-            
-        except Exception as e:
-            print(f"ERROR saving report: {e}")
-            return ""
-    
-    def run_deidentification(self) -> bool:
-        """
-        Run the complete deidentification process.
-        
-        Workflow:
-        1. Load enhanced test CSV
-        2. Validate input data
-        3. Separate matched and unmatched
-        4. Rename Prompt_ID to Patient Account Number
-        5. Deidentify (remove PHI columns)
-        6. Validate deidentified output
-        7. Display sample
-        8. Save both CSV files
-        9. Save report
-        
-        Returns:
-            bool: True if successful
-        """
-        try:
-            print("="*150)
-            print("AMD REPORT DEIDENTIFICATION (Option A - Keep All Records)")
-            print("="*150)
-            
-            # Step 1: Load enhanced test CSV
-            print("\n--- STEP 1: Load Enhanced Test CSV ---")
-            if not self.load_test_csv():
-                return False
-            
-            # Step 2: Validate input
-            print("\n--- STEP 2: Validate Input Data ---")
-            is_valid, msg = self.validate_input_data()
-            if not is_valid:
-                print(f"ERROR: {msg}")
-                return False
-            print(f"✓ {msg}")
-            
-            # Step 3: Separate matched and unmatched
-            print("\n--- STEP 3: Separate Matched and Unmatched Records ---")
-            if not self.separate_matched_and_unmatched():
-                return False
-            
-            # Step 4: Rename column for standardization
-            print("\n--- STEP 4: Standardize Column Names ---")
-            if not self.rename_prompt_id_column():
-                return False
-            
-            # Step 5: Deidentify
-            print("\n--- STEP 5: Deidentify Data (Remove PHI) ---")
-            if not self.deidentify():
-                return False
-            
-            # Step 6: Validate deidentified output
-            print("\n--- STEP 6: Validate Deidentified Data ---")
-            is_valid, msg = self.validate_deidentified_data()
-            if not is_valid:
-                print(f"ERROR: {msg}")
-                return False
-            print(f"✓ {msg}")
-            
-            # Step 7: Display sample
-            print("\n--- STEP 7: Display Sample Data ---")
-            self.display_sample(num_rows=5)
-            
-            # Step 8: Save deidentified CSV
-            print("\n--- STEP 8: Save Deidentified CSV (All Records) ---")
-            deidentified_path = self.save_deidentified_csv()
-            if not deidentified_path:
-                return False
-            
-            # Step 9: Save unmatched CSV
-            print("\n--- STEP 9: Save Unmatched Records (Follow-Up) ---")
-            unmatched_path = self.save_unmatched_csv()
-            
-            # Step 10: Generate and save report
-            print("\n--- STEP 10: Generate Deidentification Report ---")
-            report = self.generate_deidentification_report(deidentified_path, unmatched_path)
-            report_path = self.save_deidentification_report(report)
-            
-            # Print report
-            print("\n" + "="*150)
-            print(report)
-            print("="*150)
-            
-            print(f"\n✓ Deidentification completed successfully!")
-            print(f"\nOUTPUT FILES:")
-            print(f"  1. Deidentified CSV: {deidentified_path}")
-            if unmatched_path:
-                print(f"  2. Unmatched Follow-up: {unmatched_path}")
-            print(f"  3. Report: {report_path}")
-            print(f"\n✅ Original AMD_data Google Sheet remains UNCHANGED")
-            print(f"✅ Deidentified data ready for comparison with Prompt EHR")
-            if self.stats['unmatched_records'] > 0:
-                print(f"⚠️  {self.stats['unmatched_records']} unmatched records - review follow-up file for manual research")
-            
-            return True
-            
-        except Exception as e:
-            print(f"ERROR in deidentification process: {e}")
-            return False
+'Patient Account Number': ...,
+'DOS': ...,
+'Prompt_Allowed': ...,
+'AMD_Charges': ...,
+...
 ```
 
-**Why:** Complete deidentification with TWO outputs (main + follow-up), standardized column names, and comprehensive unmatched tracking
-
----
-
-## STEP 2: Add main() function
-
-**Add this at the end of the file:**
-
+**Updated output columns (ADD after DOS):**
 ```python
-def main():
-    """
-    Example usage of AMDDeidentifier.
-    Expects input from enhanced test_amd_matching.py.
-    Creates both deidentified (main) and unmatched (follow-up) CSVs.
-    """
-    print("="*150)
-    print("AMD DEIDENTIFICATION - Option A (Keep All Records + Unmatched Follow-Up)")
-    print("="*150)
-    
-    # Create deidentifier (will auto-find test CSV)
-    deidentifier = AMDDeidentifier()
-    
-    # Run deidentification
-    success = deidentifier.run_deidentification()
-    
-    if success:
-        print("\n✓ AMD data successfully deidentified")
-        print("  - Main file: Ready for comparison with Prompt EHR")
-        print("  - Follow-up file: Unmatched records for manual research")
-    else:
-        print("\n✗ Error during deidentification")
-        print("  Ensure test_amd_matching.py was run first with all matches verified")
-    
-    print("\n" + "="*150)
+'Patient Account Number': ...,
+'DOS': ...,
+'Case_Primary_Insurance': ...,  # NEW - add here
+'Prompt_Allowed': ...,
+'AMD_Charges': ...,
+...
+```
 
-
-if __name__ == '__main__':
-    main()
+**In the method, add extraction:**
+```python
+for comp in comparisons:
+    output_rows.append({
+        'Patient Account Number': comp['patient_account_number'],
+        'DOS': comp['dos'],
+        'Case_Primary_Insurance': comp['primary_insurance'],  # NEW
+        'Prompt_Allowed': comp['prompt_allowed'],
+        'AMD_Charges': comp['amd_charges'],
+        # ... rest of columns
+    })
 ```
 
 ---
 
-## STEP 3: Key Implementation Details
+### Change 2: Update `compare_financial_data()` method
 
-**Cascade MUST include:**
+Add insurance extraction to comparison record:
 
-1. **Two-File Strategy**
-   - Main deidentified file: All records (MATCHED + UNMATCHED)
-   - Follow-up unmatched file: Only UNMATCHED records with names
-   - Each serves a specific purpose
+**Current code:**
+```python
+comparison = {
+    'key': match['key'],
+    'patient_account_number': str(prompt_row.get('Patient Account Number', '')).strip(),
+    'dos': match['key'].split('|')[1],
+    'prompt_allowed': prompt_allowed,
+    # ... rest
+}
+```
 
-2. **Column Renaming**
-   - "Prompt_ID" → "Patient Account Number"
-   - Standardizes naming for merger with Prompt EHR
-   - Applies to both files
-
-3. **PHI Removal (Main File Only)**
-   - Remove: Patient Name, DOB, Office, Provider
-   - Keep: Patient Account Number, Service Date, Financial Data
-   - Unmatched file keeps names for follow-up
-
-4. **Unmatched Tracking**
-   - Extract patient names from unmatched records
-   - Build list for report
-   - Include in follow-up file
-
-5. **Comprehensive Reporting**
-   - Match statistics
-   - List of unmatched patients with names and DOS
-   - Guidance on follow-up process
-   - File purposes explained
+**Updated code (ADD insurance extraction):**
+```python
+comparison = {
+    'key': match['key'],
+    'patient_account_number': str(prompt_row.get('Patient Account Number', '')).strip(),
+    'dos': match['key'].split('|')[1],
+    'primary_insurance': str(prompt_row.get('Case Primary Insurance', '')).strip(),  # NEW
+    'prompt_allowed': prompt_allowed,
+    # ... rest
+}
+```
 
 ---
 
-## STEP 4: Important Features
+### Change 3: Update `create_prompt_only_output()` method
 
-1. **Option A Implementation**
-   - All records kept in main file
-   - Records marked as MATCHED or UNMATCHED
-   - Allows you to see full picture
+**Current output columns:**
+```python
+'Patient Account Number': row.get('Patient Account Number', ''),
+'DOS': record['key'].split('|')[1],
+'Provider': row.get('Provider', ''),
+# ... rest
+```
 
-2. **Separate Follow-Up File**
-   - Easy to identify which patients need manual research
-   - Patient names available for investigation
-   - Clear reason: Possible new patients not in Prompt EHR
-
-3. **Standardized Column Naming**
-   - "Patient Account Number" matches Prompt EHR naming
-   - Makes future mergers easier
-   - Consistent terminology
-
-4. **Two-Purpose Outputs**
-   - Main file: For automated comparison/merger
-   - Follow-up file: For manual investigation
+**Updated output columns (ADD after DOS):**
+```python
+'Patient Account Number': row.get('Patient Account Number', ''),
+'DOS': record['key'].split('|')[1],
+'Case_Primary_Insurance': row.get('Case Primary Insurance', ''),  # NEW - add here
+'Provider': row.get('Provider', ''),
+# ... rest
+```
 
 ---
 
-## STEP 5: User Workflow
+### Change 4: Update `create_amd_only_output()` method
 
-**After Cascade creates file:**
+**Current output columns:**
+```python
+'Patient Account Number': row.get('Patient Account Number', ''),
+'DOS': record['key'].split('|')[1],
+'Charges': row.get('Charges', ''),
+# ... rest
+```
+
+**Updated output columns (ADD after DOS):**
+```python
+'Patient Account Number': row.get('Patient Account Number', ''),
+'DOS': record['key'].split('|')[1],
+'Case_Primary_Insurance': '',  # NEW - empty for AMD-only (no Prompt data)
+'Charges': row.get('Charges', ''),
+# ... rest
+```
+
+---
+
+## Why These Specific Changes
+
+1. **`create_matched_output()`**: Extract insurance from Prompt data being compared
+   - This is where you'll see payment posting gaps by insurance
+   - Insurance name helps identify which carriers have issues
+
+2. **`create_prompt_only_output()`**: Show insurance for visits in Prompt but not AMD
+   - Identifies if specific insurances are not being billed
+   - Helps diagnose if certain insurances have different billing workflows
+
+3. **`create_amd_only_output()`**: Empty column for consistency
+   - AMD data doesn't have insurance info (separate system)
+   - Empty string keeps CSV structure consistent
+   - Could be filled manually if needed
+
+---
+
+## Implementation Details
+
+### In `compare_financial_data()` method
+
+Find this section:
+```python
+for match in self.matched_records:
+    prompt_row = match['prompt_row']
+    amd_row = match['amd_row']
+    
+    # Extract financial data
+    prompt_allowed = self._get_numeric(prompt_row, 'Primary Allowed')
+    amd_charges = self._get_numeric(amd_row, 'Charges')
+```
+
+Add after that (before the `comparison` dictionary):
+```python
+    # Extract insurance type
+    primary_insurance = str(prompt_row.get('Case Primary Insurance', '')).strip()
+```
+
+Then in the `comparison` dictionary, add:
+```python
+    comparison = {
+        'key': match['key'],
+        'patient_account_number': str(prompt_row.get('Patient Account Number', '')).strip(),
+        'dos': match['key'].split('|')[1],
+        'primary_insurance': primary_insurance,  # NEW LINE
+        'prompt_allowed': prompt_allowed,
+        'amd_charges': amd_charges,
+        # ... rest of dictionary
+    }
+```
+
+---
+
+### In `create_matched_output()` method
+
+Find this section:
+```python
+for comp in comparisons:
+    output_rows.append({
+        'Patient Account Number': comp['patient_account_number'],
+        'DOS': comp['dos'],
+        'Prompt_Allowed': comp['prompt_allowed'],
+```
+
+Change to:
+```python
+for comp in comparisons:
+    output_rows.append({
+        'Patient Account Number': comp['patient_account_number'],
+        'DOS': comp['dos'],
+        'Case_Primary_Insurance': comp['primary_insurance'],  # NEW LINE
+        'Prompt_Allowed': comp['prompt_allowed'],
+```
+
+---
+
+### In `create_prompt_only_output()` method
+
+Find this section:
+```python
+for record in self.prompt_only_records:
+    row = record['row']
+    output_rows.append({
+        'Patient Account Number': row.get('Patient Account Number', ''),
+        'DOS': record['key'].split('|')[1],
+        'Provider': row.get('Provider', ''),
+```
+
+Change to:
+```python
+for record in self.prompt_only_records:
+    row = record['row']
+    output_rows.append({
+        'Patient Account Number': row.get('Patient Account Number', ''),
+        'DOS': record['key'].split('|')[1],
+        'Case_Primary_Insurance': row.get('Case Primary Insurance', ''),  # NEW LINE
+        'Provider': row.get('Provider', ''),
+```
+
+---
+
+### In `create_amd_only_output()` method
+
+Find this section:
+```python
+for record in self.amd_only_records:
+    row = record['row']
+    output_rows.append({
+        'Patient Account Number': row.get('Patient Account Number', ''),
+        'DOS': record['key'].split('|')[1],
+        'Charges': row.get('Charges', ''),
+```
+
+Change to:
+```python
+for record in self.amd_only_records:
+    row = record['row']
+    output_rows.append({
+        'Patient Account Number': row.get('Patient Account Number', ''),
+        'DOS': record['key'].split('|')[1],
+        'Case_Primary_Insurance': '',  # NEW LINE - empty for AMD-only
+        'Charges': row.get('Charges', ''),
+```
+
+---
+
+## Testing After Update
+
+After Cascade makes changes, run the script:
 
 ```bash
-# Step 1: Run enhanced test matching
-python test_amd_matching.py
-
-# Step 2: Review test results and confirm matches
-
-# Step 3: Run deidentification
-python deidentify_amd_report.py
-
-# Output Files:
-# - amd_deidentified_[DATE].csv (all records, no names)
-# - amd_unmatched_[DATE].csv (unmatched only, with names for research)
-# - deidentification_report_[DATE].md (full statistics)
-
-# Step 4: Review report and unmatched list
-
-# Step 5: Use main deidentified file for next step (comparison with Prompt)
-
-# Step 6 (Later): Manually research unmatched patients in amd_unmatched_[DATE].csv
+python compare_and_merge_amd_prompt.py
 ```
+
+**Verify:**
+1. ✅ All three CSV files generated successfully
+2. ✅ `comparison_matched_*.csv` shows "Case_Primary_Insurance" column right after DOS
+3. ✅ Insurance names visible (e.g., "Blue Cross", "Automobile Medical", etc.)
+4. ✅ `prompt_only_*.csv` shows insurance for those records
+5. ✅ `amd_only_*.csv` shows empty string in insurance column (expected)
+
+**Sample output should look like:**
+```
+Patient Account Number,DOS,Case_Primary_Insurance,Prompt_Allowed,AMD_Charges,...
+1002332-ARR,09/23/2025,Automobile Medical (Contracted),0.0,175.0,...
+1004867-ARR,09/25/2025,Workers' Compensation Health Claim,0.0,150.0,...
+```
+
+---
+
+## Expected Outcome
+
+Once updated, you'll be able to:
+
+✅ **Identify payment posting gaps by insurance type**
+- "Which insurances have collections in AMD but not posted in Prompt?"
+- "Does Blue Cross have more posting delays than Workers Comp?"
+
+✅ **Analyze trends**
+- Are certain insurance types systematically not being posted?
+- Do posting delays vary by carrier?
+
+✅ **Diagnose workflow issues**
+- "Insurance ABC payments are in AMD but not Prompt - why?"
+- "Should we have automated posting rules for certain insurances?"
+
+✅ **Sort and filter easily**
+- Open CSV in Excel
+- Filter by insurance type
+- See all posting gaps for that carrier
 
 ---
 
 ## CRITICAL NOTES FOR CASCADE
 
-1. **DO NOT RUN THIS SCRIPT**
-   - Just create the file
-   - User will run locally
+1. **DO NOT RUN THE SCRIPT**
+   - Just make the code changes
+   - User will run it locally
 
-2. **CREATE TWO OUTPUTS**
-   - Main deidentified: All records, names removed
-   - Unmatched follow-up: UNMATCHED only, names kept
+2. **COLUMN PLACEMENT**
+   - Insurance goes right after DOS
+   - This puts it early and visible for quick review
 
-3. **RENAME COLUMN**
-   - Prompt_ID → Patient Account Number
-   - Apply to both files consistently
+3. **FIELD NAME**
+   - Column in Prompt is exactly: "Case Primary Insurance"
+   - Extract with: `row.get('Case Primary Insurance', '')`
 
-4. **UNMATCHED EXTRACTION**
-   - Build list of unmatched patients with names
-   - Save to separate CSV for follow-up
-   - Include details in report
+4. **HANDLE EMPTY VALUES**
+   - Use `.strip()` to remove whitespace
+   - Use empty string `''` as default if missing
+   - For AMD-only file, use empty string (no Prompt data)
 
-5. **USE PANDAS**
-   - Load with pd.read_csv()
-   - Save with df.to_csv()
-   - Handle column renaming
-   - Drop columns with df.drop()
+5. **THREE SEPARATE METHODS TO UPDATE**
+   - `compare_financial_data()` - extract insurance into comparison record
+   - `create_matched_output()` - add to matched CSV
+   - `create_prompt_only_output()` - add to prompt-only CSV
+   - `create_amd_only_output()` - add empty column to AMD-only CSV
 
-6. **ORIGINAL GOOGLE SHEET UNTOUCHED**
-   - Work only with local CSV files
-   - Original AMD_data unchanged
+6. **PRESERVE ALL OTHER FUNCTIONALITY**
+   - Don't change matching logic
+   - Don't change financial comparison logic
+   - Don't change discrepancy detection
+   - ONLY add the insurance column in the right places
 
 ---
 
 ## Success Criteria
 
-When complete, the script should:
-
-✓ Find and load test CSV
-✓ Validate input has Prompt_ID column
-✓ Count matched vs unmatched
-✓ Separate records into matched/unmatched groups
-✓ Rename "Prompt_ID" to "Patient Account Number" in both
-✓ Remove PHI from main file only
-✓ Keep patient names in unmatched file
-✓ Validate deidentified output (no PHI)
-✓ Display sample data
-✓ Save main deidentified CSV (all records)
-✓ Save unmatched CSV (follow-up only)
-✓ Generate comprehensive report
-✓ Include unmatched patient list with names
-✓ Leave original Google Sheet unchanged
+When complete:
+✓ All three CSV files generated
+✓ Case_Primary_Insurance column appears right after DOS in each file
+✓ Insurance names populated in matched and prompt-only files
+✓ Empty string in AMD-only file insurance column
+✓ Script runs without errors
+✓ All other columns and functionality unchanged
+✓ Ready for user to analyze payment posting gaps by insurance
 
 ---
 
 ## Questions Cascade Might Ask
 
-Q: "Should I create one or two CSV files?"
-A: Two files - main (all records, no names) and follow-up (unmatched only, with names)
+Q: "Where is 'Case Primary Insurance' column in the data?"
+A: In Prompt EHR "All Data" sheet - it's column N or accessible by name from the DataFrame
 
-Q: "What column name should I use?"
-A: Rename "Prompt_ID" to "Patient Account Number" for consistency with Prompt EHR
+Q: "Should I handle null/empty insurance values?"
+A: Yes - use `.strip()` and default to empty string `''` if missing
 
-Q: "Should unmatched records have names?"
-A: YES - unmatched file KEEPS names for manual follow-up investigation
+Q: "Why is insurance empty in AMD-only file?"
+A: AMD data doesn't have insurance info (separate billing system). Empty column keeps CSV structure consistent.
 
-Q: "What if there are no unmatched records?"
-A: Don't create unmatched file. Report it as "all patients matched"
+Q: "Should I add insurance to other parts of the code?"
+A: No - only in the three output creation methods and in compare_financial_data where you extract it
 
-Q: "Should I keep all records in main file?"
-A: YES - main file has both MATCHED and UNMATCHED. Follow-up has UNMATCHED only
+Q: "What if insurance column doesn't exist in Prompt data?"
+A: Use `.get('Case Primary Insurance', '')` - will return empty string if not found
