@@ -429,6 +429,8 @@ class AMDPromptComparator:
                     'DOS': record['key'].split('|')[1],
                     'Case_Primary_Insurance': row.get('Case Primary Insurance', ''),
                     'Provider': row.get('Provider', ''),
+                    'Referral Source': row.get('Referral Source', ''),
+                    'Visit Facility': row.get('Visit Facility', ''),
                     'Primary Allowed': row.get('Primary Allowed', ''),
                     'Total Paid': row.get('Total Paid', ''),
                     'Visit Stage': row.get('Visit Stage', ''),
