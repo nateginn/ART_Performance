@@ -1,0 +1,18 @@
+Patient Account Number,DOS,Case_Primary_Insurance,Charges,Insurance Payments,Patient Payments,Current Balance,Note
+UNMATCHED,09/11/2025,,$240.00,$64.76,,$0.00,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+UNMATCHED,09/24/2025,,,,$30.00,,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+1001903-ARR,09/09/2025,,$390.00,,,$390.00,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+UNMATCHED,09/18/2025,,$350.00,$125.71,$20.00,$0.00,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+1005131-ARR,09/08/2025,,"($1,214.20)",,,"($1,214.20)",In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+1002412-ARR,09/02/2025,,$240.00,,,$240.00,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+1002412-ARR,09/22/2025,,,,$35.00,,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+1004925-ARR,09/22/2025,,,,$70.00,,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+1000678-ARR,09/25/2025,,$240.00,$76.69,,$40.00,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+UNMATCHED,09/04/2025,,,$369.00,,,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+UNMATCHED,09/23/2025,,,$126.30,,,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+1000678-ARR,09/18/2025,,$240.00,$76.69,,$40.00,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+UNMATCHED,09/10/2025,,($369.00),,,($369.00),In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+UNMATCHED,09/08/2025,,$0.00,,,$0.00,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+1000678-ARR,09/04/2025,,,,($40.00),,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+UNMATCHED,09/25/2025,,$240.00,$64.76,,$0.00,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy
+UNMATCHED,09/30/2025,,,$306.13,,,In AMD but NOT in Prompt - UNMATCHED patient or data discrepancy

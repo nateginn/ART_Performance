@@ -524,7 +524,31 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             
         except Exception as e:
             print(f"ERROR generating report: {e}")
-            return ""
+            import traceback
+            traceback.print_exc()
+            # Return a minimal report instead of empty string
+            return f"""# AMD Report Deidentification Report
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## Error Generating Full Report
+An error occurred while generating the detailed report: {str(e)}
+
+## Summary (from stats)
+- **Total Records Processed**: {self.stats['total_records']}
+- **Matched Records**: {self.stats['matched_records']}
+- **Unmatched Records**: {self.stats['unmatched_records']}
+
+## Files Generated
+- **Deidentified CSV**: amd_deidentified_{self.timestamp}.csv
+- **Unmatched CSV**: amd_unmatched_{self.timestamp}.csv
+
+## Please check console output for details
+The full error traceback has been printed to the console above.
+
+---
+*Report generation encountered an error. CSV files were created successfully.*
+*Please review console output for debugging information.*
+"""
     
     def save_deidentification_report(self, report: str) -> str:
         """
@@ -542,7 +566,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             
             os.makedirs("data", exist_ok=True)
             
-            with open(report_path, 'w') as f:
+            with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(report)
             
             print(f"✓ Deidentification report saved: {report_path}")

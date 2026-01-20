@@ -520,8 +520,10 @@ class AMDMatchingTester:
         try:
             match_rate = (self.matching_stats['matched']/self.matching_stats['total_amd_records']*100) if self.matching_stats['total_amd_records'] > 0 else 0
             
-            # Count remaining close matches (not yet confirmed)
-            remaining_close = len([1 for row in self.matched_data['Prompt_ID'] if row == 'CLOSE_MATCH'])
+            # Count remaining close matches (safely check if matched_data exists)
+            remaining_close = 0
+            if self.matched_data is not None and 'Prompt_ID' in self.matched_data.columns:
+                remaining_close = len([1 for row in self.matched_data['Prompt_ID'] if row == 'CLOSE_MATCH'])
             
             report = f"""# AMD Patient Matching Test Report
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -538,7 +540,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
             
             if self.matching_stats['unmatched'] == 0:
-                report += "✅ **PERFECT MATCH** - All records matched successfully!\n\n"
+                report += "[✓] **PERFECT MATCH** - All records matched successfully!\n\n"
                 report += "### Next Steps\n"
                 report += "1. Review the results above\n"
                 report += "2. If accuracy is confirmed, run `deidentify_amd_report.py`\n"
@@ -549,7 +551,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 report += "   - Save de-identified CSV\n"
                 report += "   - Delete original AMD file with names\n"
             else:
-                report += f"⚠️ **PARTIAL MATCH** - {self.matching_stats['unmatched']} records unmatched\n\n"
+                report += f"[!] **PARTIAL MATCH** - {self.matching_stats['unmatched']} records unmatched\n\n"
                 report += "### Unmatched Records\n"
                 report += "Please review these records:\n\n"
                 report += "| Row | Patient Name | Date of Birth |\n"
@@ -590,7 +592,26 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             
         except Exception as e:
             print(f"ERROR generating report: {e}")
-            return ""
+            import traceback
+            traceback.print_exc()
+            # Return a minimal report instead of empty string
+            return f"""# AMD Patient Matching Test Report
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## Error Generating Full Report
+An error occurred while generating the detailed report: {str(e)}
+
+## Summary (from stats)
+- **Total AMD Records**: {self.matching_stats['total_amd_records']}
+- **Matched**: {self.matching_stats['matched']}
+- **Unmatched**: {self.matching_stats['unmatched']}
+
+## Please check console output for details
+The full error traceback has been printed to the console above.
+
+---
+*Report generation encountered an error. Please review console output.*
+"""
     
     def save_test_report(self, report: str) -> str:
         """
@@ -609,7 +630,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             
             os.makedirs("data", exist_ok=True)
             
-            with open(report_path, 'w') as f:
+            with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(report)
             
             print(f"✓ Test report saved to: {report_path}")
