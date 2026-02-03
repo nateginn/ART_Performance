@@ -413,18 +413,27 @@ The discrepancy between EHR and QB P&L is expected because:
         
         return report
     
-    def save_results(self, output_dir: str = "data") -> Dict[str, str]:
+    def save_results(self, output_dir: str = "data", cleanup_old: bool = True) -> Dict[str, str]:
         """
         Save reconciliation results to files.
         
         Args:
             output_dir: Output directory
+            cleanup_old: If True, remove old versions of these files
             
         Returns:
             Dict[str, str]: Mapping of result type to filepath
         """
         os.makedirs(output_dir, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Clean up old files before saving new ones
+        if cleanup_old:
+            try:
+                from data_cleanup import cleanup_old_files
+                cleanup_old_files(output_dir, dry_run=False)
+            except ImportError:
+                pass
         
         saved_files = {}
         

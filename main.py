@@ -87,7 +87,14 @@ Examples:
     parser.add_argument(
         '--qb-reconcile',
         action='store_true',
-        help='Run EHR vs QuickBooks deposit reconciliation (Phase 3)'
+        help='Run EHR vs QuickBooks P&L reconciliation (Phase 3)'
+    )
+    
+    # Data cleanup
+    parser.add_argument(
+        '--cleanup',
+        action='store_true',
+        help='Clean up old data files, keeping only most recent versions'
     )
     
     # Display options
@@ -360,6 +367,12 @@ def main():
     if args.qb_reconcile:
         success = run_qb_reconciliation(verbose=args.verbose)
         sys.exit(0 if success else 1)
+    
+    # Handle data cleanup
+    if args.cleanup:
+        from data_cleanup import run_cleanup
+        run_cleanup(dry_run=False)
+        sys.exit(0)
     
     # Load data
     df = load_data(

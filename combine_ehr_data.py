@@ -346,12 +346,21 @@ class EHRDataCombiner:
         
         return summary.sort_values(['Month', 'Facility'])
     
-    def save_combined_data(self) -> str:
+    def save_combined_data(self, cleanup_old: bool = True) -> str:
         """Save combined data to CSV."""
         if self.combined_df is None:
             return None
         
         os.makedirs('data', exist_ok=True)
+        
+        # Clean up old combined files before saving
+        if cleanup_old:
+            try:
+                from data_cleanup import cleanup_old_files
+                cleanup_old_files('data', dry_run=False)
+            except ImportError:
+                pass
+        
         filepath = f"data/combined_ehr_data_{self.timestamp}.csv"
         self.combined_df.to_csv(filepath, index=False)
         print(f"✓ Saved: {filepath}")
