@@ -31,30 +31,63 @@
 
 ## Phase 1 Priorities (In Order)
 
-### Priority #1: Google Drive Access & URL Security ✓
-**Status**: Foundation script created (`google_drive_access.py`)
+### Priority #1: Google Drive Access & URL Security ✓ COMPLETE
+**Status**: Complete (`Google_Drive_Access.py`)
 - [x] Safe access to Google Drive folders via OAuth
 - [x] No hardcoded credentials or sensitive data exposure
-- [ ] **TODO**: Test with your specific folder URLs
-- [ ] **TODO**: Verify token storage security
+- [x] Token storage configured
 
-### Priority #2: Data Ingestion & File Access
-**Status**: In Development
-- [ ] Load CSV revenue reports from Google Drive
-- [ ] Parse and validate data structure
-- [ ] Handle multiple file formats (CSV, XLSX, PDFs - future)
-- [ ] Simple data retrieval (no complex processing yet)
+### Priority #2: Data Ingestion & File Access ✓ COMPLETE
+**Status**: Complete (`data_loader.py`)
+- [x] Load CSV revenue reports from Google Drive
+- [x] Load data from Google Sheets
+- [x] Parse and validate data structure
+- [x] Clean currency and date columns
+- [x] Filter by date range
 
-### Priority #3: Basic Report Generation
-**Status**: Planned (after #2)
-- [ ] Generate reports from structured queries
-- [ ] Output formats: CSV, plain text, formatted tables
-- [ ] Reports to generate:
-  1. New patients seen (date range)
-  2. Visit status summary (kept, canceled, no-show)
-  3. Billing summary (total billed by date range)
-  4. Provider performance metrics
-  5. Insurance type breakdown
+### Priority #3: Data Validation ✓ COMPLETE
+**Status**: Complete (`data_validator.py`)
+- [x] Validate required columns
+- [x] Check date formats and ranges
+- [x] Validate numeric fields
+- [x] Check business rules
+- [x] Generate validation reports
+
+### Priority #4: Metrics Calculation ✓ COMPLETE
+**Status**: Complete (`metrics_calculator.py`)
+- [x] Executive summary metrics
+- [x] Provider performance
+- [x] Insurance analysis
+- [x] Facility comparison
+- [x] Visit stage breakdown
+- [x] Collection pipeline
+- [x] Red flag identification
+
+### Priority #5: Report Generation ✓ COMPLETE
+**Status**: Complete (`report_generator.py`)
+- [x] Executive summary reports
+- [x] Provider performance reports
+- [x] Insurance analysis reports
+- [x] Facility comparison reports
+- [x] Full comprehensive reports
+- [x] Markdown format reports
+
+### Priority #6: Export Handler ✓ COMPLETE
+**Status**: Complete (`export_handler.py`)
+- [x] Export to CSV
+- [x] Export to TXT
+- [x] Export to JSON
+- [x] Export to Markdown
+- [x] Console display formatting
+
+### Priority #7: CLI Entry Point ✓ COMPLETE
+**Status**: Complete (`main.py`)
+- [x] Command-line argument parsing
+- [x] Report type selection
+- [x] Date range filtering
+- [x] Export format selection
+- [x] Validation mode
+- [x] Billing comparison integration
 
 ---
 
@@ -102,24 +135,26 @@ Total Paid                : Total payment received
 
 ```
 ART_Performance/
+├── main.py                         # [DONE] CLI entry point
 ├── Google_Drive_Access.py          # [DONE] Drive access module
-├── PROJECT.md                      # [THIS FILE] Project guide
+├── data_loader.py                  # [DONE] Load CSVs from Drive/Sheets
+├── data_validator.py               # [DONE] Validate data integrity
+├── metrics_calculator.py           # [DONE] Calculate KPIs
+├── report_generator.py             # [DONE] Generate standard reports
+├── export_handler.py               # [DONE] Handle output formats
+├── README.md                       # [THIS FILE] Project guide
 ├── requirements.txt                # [DONE] Python dependencies
-├── subroutines/
-│   ├── __init__.py
-│   ├── data_loader.py              # [TODO] Load CSVs from Drive
-│   ├── data_validator.py           # [TODO] Validate data integrity
-│   ├── report_generator.py         # [TODO] Generate standard reports
-│   ├── metrics_calculator.py       # [TODO] Calculate KPIs
-│   └── export_handler.py           # [TODO] Handle output formats
-├── reference/
-│   ├── master_patient_list.py      # [TODO] Local reference (NOT sent to LLM)
-│   └── config.py                   # [TODO] Configuration constants
-├── main.py                         # [TODO] CLI entry point
-└── tests/                          # [TODO] Test files for each subroutine
-    ├── test_data_loader.py
-    ├── test_report_generator.py
-    └── test_metrics_calculator.py
+│
+├── # Phase 2 - Billing Comparison (AMD vs Prompt)
+├── deidentify_amd_report.py        # [DONE] De-identify AMD data
+├── compare_and_merge_amd_prompt.py # [DONE] Compare billing systems
+├── billing_master_report.py        # [DONE] Combined billing report
+├── test_amd_matching.py            # [DONE] Test patient matching
+├── update_master_patient_list.py   # [DONE] Update patient list
+│
+├── data/                           # Output CSV files
+├── reports/                        # Generated reports
+└── master_patient_list.json        # PHI reference (NOT in git)
 ```
 
 ---

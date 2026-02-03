@@ -1,5 +1,5 @@
 # AMD vs Prompt EHR Comparison Report
-Generated: 2026-01-19 22:27:40
+Generated: 2026-01-20 00:14:42
 
 ## Summary Statistics
 
@@ -11,17 +11,23 @@ Generated: 2026-01-19 22:27:40
 - **AMD-only Records**: 17 (in AMD but not Prompt)
 
 ### Data Quality
-- **Matched Records with Discrepancies**: 75
-- **Perfect Matches (no discrepancies)**: -29
-- **Match Quality**: -63.0% perfect match rate
+- **Matched Records with Discrepancies**: 84
+- **Perfect Matches (no discrepancies)**: -38
+- **Match Quality**: -82.6% perfect match rate
 
 ## Discrepancy Breakdown
 
 ### Billed Amount Mismatches
 - **Count**: 46
-- **Issue**: Prompt "Primary Allowed" differs from AMD "Charges"
+- **Issue**: Prompt "Last Billed" differs from AMD "Charges"
 - **Cause**: Could be adjustments, contract differences, or data entry errors
 - **Action**: Review specific records in `comparison_matched_*.csv`
+
+### Patient Payment Mismatches
+- **Count**: 9
+- **Issue**: Prompt "Patient Paid" differs from AMD "Patient Payments"
+- **Cause**: Payment posting delays, refunds, or collection differences
+- **Action**: Review patient payment records and collection notes
 
 ### Insurance Payment Mismatches
 - **Count**: 11
@@ -32,7 +38,7 @@ Generated: 2026-01-19 22:27:40
 ### Total Paid Mismatches
 - **Count**: 18
 - **Issue**: Total collected differs between Prompt and AMD
-- **Cause**: Patient payment differences, write-offs, adjustments
+- **Cause**: Combined patient and insurance payment differences
 - **Action**: Review collection and adjustment records
 
 ## Records Requiring Investigation

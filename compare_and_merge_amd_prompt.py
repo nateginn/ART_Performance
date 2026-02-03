@@ -290,17 +290,26 @@ class AMDPromptComparator:
                 amd_row = match['amd_row']
                 
                 # Extract financial data
-                prompt_allowed = self._get_numeric(prompt_row, 'Primary Allowed')
+                # Last Billed from Prompt should match Charges from AMD
+                prompt_last_billed = self._get_numeric(prompt_row, 'Last Billed')
                 amd_charges = self._get_numeric(amd_row, 'Charges')
+                
+                prompt_patient_paid = self._get_numeric(prompt_row, 'Patient Paid')
+                amd_patient_paid = self._get_numeric(amd_row, 'Patient Payments')
                 
                 prompt_insurance_paid = self._get_numeric(prompt_row, 'Primary Insurance Paid')
                 amd_insurance_paid = self._get_numeric(amd_row, 'Insurance Payments')
                 
                 prompt_total_paid = self._get_numeric(prompt_row, 'Total Paid')
-                amd_total_paid = self._get_numeric(amd_row, 'Patient Payments') + amd_insurance_paid
+                amd_total_paid = amd_patient_paid + amd_insurance_paid
                 
                 # Extract insurance type
                 primary_insurance = str(prompt_row.get('Case Primary Insurance', '')).strip()
+                
+                # Extract Provider and Visit Facility from Prompt data
+                provider = str(prompt_row.get('Provider', '')).strip()
+                referral_source = str(prompt_row.get('Referral Source', '')).strip()
+                visit_facility = str(prompt_row.get('Visit Facility', '')).strip()
                 
                 # Create comparison record
                 comparison = {
@@ -308,8 +317,13 @@ class AMDPromptComparator:
                     'patient_account_number': str(prompt_row.get('Patient Account Number', '')).strip(),
                     'dos': match['key'].split('|')[1],
                     'primary_insurance': primary_insurance,
-                    'prompt_allowed': prompt_allowed,
+                    'provider': provider,
+                    'referral_source': referral_source,
+                    'visit_facility': visit_facility,
+                    'prompt_last_billed': prompt_last_billed,
                     'amd_charges': amd_charges,
+                    'prompt_patient_paid': prompt_patient_paid,
+                    'amd_patient_paid': amd_patient_paid,
                     'prompt_insurance_paid': prompt_insurance_paid,
                     'amd_insurance_paid': amd_insurance_paid,
                     'prompt_total_paid': prompt_total_paid,
@@ -318,15 +332,21 @@ class AMDPromptComparator:
                 }
                 
                 # Check for discrepancies
-                if prompt_allowed != amd_charges:
+                if prompt_last_billed != amd_charges:
                     comparison['discrepancies'].append(
-                        f"BILLED: Prompt=${prompt_allowed:.2f} vs AMD=${amd_charges:.2f}"
+                        f"BILLED: Prompt=${prompt_last_billed:.2f} vs AMD=${amd_charges:.2f}"
+                    )
+                    discrepancies_found += 1
+                
+                if prompt_patient_paid != amd_patient_paid:
+                    comparison['discrepancies'].append(
+                        f"PATIENT PAID: Prompt=${prompt_patient_paid:.2f} vs AMD=${amd_patient_paid:.2f}"
                     )
                     discrepancies_found += 1
                 
                 if prompt_insurance_paid != amd_insurance_paid:
                     comparison['discrepancies'].append(
-                        f"INSURANCE: Prompt=${prompt_insurance_paid:.2f} vs AMD=${amd_insurance_paid:.2f}"
+                        f"INSURANCE PAID: Prompt=${prompt_insurance_paid:.2f} vs AMD=${amd_insurance_paid:.2f}"
                     )
                     discrepancies_found += 1
                 
@@ -394,12 +414,18 @@ class AMDPromptComparator:
                     'Patient Account Number': comp['patient_account_number'],
                     'DOS': comp['dos'],
                     'Case_Primary_Insurance': comp['primary_insurance'],
-                    'Prompt_Allowed': comp['prompt_allowed'],
+                    'Provider': comp.get('provider', ''),
+                    'Referral Source': comp.get('referral_source', ''),
+                    'Visit Facility': comp.get('visit_facility', ''),
+                    'Prompt_Last_Billed': comp['prompt_last_billed'],
                     'AMD_Charges': comp['amd_charges'],
-                    'Billed_Match': 'YES' if comp['prompt_allowed'] == comp['amd_charges'] else 'NO',
+                    'Billed_Match': 'YES' if comp['prompt_last_billed'] == comp['amd_charges'] else 'NO',
+                    'Prompt_Patient_Paid': comp['prompt_patient_paid'],
+                    'AMD_Patient_Paid': comp['amd_patient_paid'],
+                    'Patient_Paid_Match': 'YES' if comp['prompt_patient_paid'] == comp['amd_patient_paid'] else 'NO',
                     'Prompt_Insurance_Paid': comp['prompt_insurance_paid'],
                     'AMD_Insurance_Paid': comp['amd_insurance_paid'],
-                    'Insurance_Match': 'YES' if comp['prompt_insurance_paid'] == comp['amd_insurance_paid'] else 'NO',
+                    'Insurance_Paid_Match': 'YES' if comp['prompt_insurance_paid'] == comp['amd_insurance_paid'] else 'NO',
                     'Prompt_Total_Paid': comp['prompt_total_paid'],
                     'AMD_Total_Paid': comp['amd_total_paid'],
                     'Total_Paid_Match': 'YES' if comp['prompt_total_paid'] == comp['amd_total_paid'] else 'NO',
@@ -431,8 +457,10 @@ class AMDPromptComparator:
                     'Provider': row.get('Provider', ''),
                     'Referral Source': row.get('Referral Source', ''),
                     'Visit Facility': row.get('Visit Facility', ''),
-                    'Primary Allowed': row.get('Primary Allowed', ''),
-                    'Total Paid': row.get('Total Paid', ''),
+                    'Prompt_Last_Billed': row.get('Last Billed', ''),
+                    'Prompt_Patient_Paid': row.get('Patient Paid', ''),
+                    'Prompt_Insurance_Paid': row.get('Primary Insurance Paid', ''),
+                    'Prompt_Total_Paid': row.get('Total Paid', ''),
                     'Visit Stage': row.get('Visit Stage', ''),
                     'Note': 'In Prompt but NOT in AMD - possible billing delay or data entry issue'
                 })
@@ -519,7 +547,8 @@ class AMDPromptComparator:
         try:
             # Count discrepancies by type
             billed_mismatches = sum(1 for c in comparisons if any('BILLED' in d for d in c['discrepancies']))
-            insurance_mismatches = sum(1 for c in comparisons if any('INSURANCE' in d for d in c['discrepancies']))
+            patient_paid_mismatches = sum(1 for c in comparisons if any('PATIENT PAID' in d for d in c['discrepancies']))
+            insurance_mismatches = sum(1 for c in comparisons if any('INSURANCE PAID' in d for d in c['discrepancies']))
             paid_mismatches = sum(1 for c in comparisons if any('TOTAL PAID' in d for d in c['discrepancies']))
             
             # Handle edge case where no comparisons exist
@@ -555,9 +584,15 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 ### Billed Amount Mismatches
 - **Count**: {billed_mismatches}
-- **Issue**: Prompt "Primary Allowed" differs from AMD "Charges"
+- **Issue**: Prompt "Last Billed" differs from AMD "Charges"
 - **Cause**: Could be adjustments, contract differences, or data entry errors
 - **Action**: Review specific records in `comparison_matched_*.csv`
+
+### Patient Payment Mismatches
+- **Count**: {patient_paid_mismatches}
+- **Issue**: Prompt "Patient Paid" differs from AMD "Patient Payments"
+- **Cause**: Payment posting delays, refunds, or collection differences
+- **Action**: Review patient payment records and collection notes
 
 ### Insurance Payment Mismatches
 - **Count**: {insurance_mismatches}
@@ -568,7 +603,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ### Total Paid Mismatches
 - **Count**: {paid_mismatches}
 - **Issue**: Total collected differs between Prompt and AMD
-- **Cause**: Patient payment differences, write-offs, adjustments
+- **Cause**: Combined patient and insurance payment differences
 - **Action**: Review collection and adjustment records
 
 ## Records Requiring Investigation

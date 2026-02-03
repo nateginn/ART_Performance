@@ -1,5 +1,5 @@
 # AMD Report Deidentification Report
-Generated: 2026-01-19 22:27:04
+Generated: 2026-01-20 00:14:29
 
 ## Summary
 - **Source**: amd_matching_test_*.csv (from enhanced test_amd_matching.py)
@@ -9,7 +9,7 @@ Generated: 2026-01-19 22:27:04
 
 ## Processing Actions
 
-### Main Output File: `amd_deidentified_20260119_222704.csv`
+### Main Output File: `amd_deidentified_20260120_001429.csv`
 - **Records**: 104 (all records, MATCHED and UNMATCHED)
 - **Column Name Change**: "Prompt_ID" renamed to "Patient Account Number" (standardized to match Prompt EHR)
 - **PHI Removed**: 
@@ -23,7 +23,7 @@ Generated: 2026-01-19 22:27:04
   - ✅ Financial data (Charges, Payments, etc.)
 - **Purpose**: Ready for comparison/merger with Prompt EHR "All Data" tab
 
-### Follow-Up File: `amd_unmatched_20260119_222704.csv`
+### Follow-Up File: `amd_unmatched_20260120_001429.csv`
 - **Records**: 45
 - **Content**: UNMATCHED records ONLY
 - **Includes Patient Names**: YES (for manual follow-up investigation)
@@ -90,8 +90,8 @@ Generated: 2026-01-19 22:27:04
 - **Matching Key**: Use (Patient Account Number, Service Date) to join with Prompt data
 
 ## File Information
-- **Deidentified**: `amd_deidentified_20260119_222704.csv`
-- **Unmatched Follow-up**: `amd_unmatched_20260119_222704.csv`
+- **Deidentified**: `amd_deidentified_20260120_001429.csv`
+- **Unmatched Follow-up**: `amd_unmatched_20260120_001429.csv`
 - **Location**: `data/` folder in ART_Performance project
 - **Shareable**: Deidentified file only (unmatched file kept for your research)
 

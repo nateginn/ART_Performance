@@ -95,12 +95,15 @@ class BillingMasterGenerator:
             'Provider',
             'Referral Source',
             'Visit Facility',
-            'Prompt_Allowed',
+            'Prompt_Last_Billed',
             'AMD_Charges',
             'Billed_Match',
+            'Prompt_Patient_Paid',
+            'AMD_Patient_Paid',
+            'Patient_Paid_Match',
             'Prompt_Insurance_Paid',
             'AMD_Insurance_Paid',
-            'Insurance_Match',
+            'Insurance_Paid_Match',
             'Prompt_Total_Paid',
             'AMD_Total_Paid',
             'Total_Paid_Match',
@@ -112,13 +115,6 @@ class BillingMasterGenerator:
         # Add Source column to matched records
         self.matched_df['Source'] = 'Both AMD & Prompt'
         self.matched_df['Match_Status'] = 'Matched'
-        
-        # Rename prompt_only columns to match master schema
-        if 'Primary Allowed' in self.prompt_only_df.columns:
-            self.prompt_only_df = self.prompt_only_df.rename(columns={
-                'Primary Allowed': 'Prompt_Allowed',
-                'Total Paid': 'Prompt_Total_Paid'
-            })
         
         # Add Source column to prompt-only records
         self.prompt_only_df['Source'] = 'Prompt Only'
@@ -152,12 +148,15 @@ class BillingMasterGenerator:
                 'Provider',
                 'Referral Source',
                 'Visit Facility',
-                'Prompt_Allowed',
+                'Prompt_Last_Billed',
                 'AMD_Charges',
                 'Billed_Match',
+                'Prompt_Patient_Paid',
+                'AMD_Patient_Paid',
+                'Patient_Paid_Match',
                 'Prompt_Insurance_Paid',
                 'AMD_Insurance_Paid',
-                'Insurance_Match',
+                'Insurance_Paid_Match',
                 'Prompt_Total_Paid',
                 'AMD_Total_Paid',
                 'Total_Paid_Match',
