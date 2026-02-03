@@ -118,6 +118,11 @@ class QBPLReconciliation:
         
         # Prepare EHR data - group by month and facility
         ehr = self.ehr_df.copy()
+        
+        # Filter out summary/total rows (rows with blank facility or no date)
+        ehr = ehr[ehr['Visit Facility'].notna() & (ehr['Visit Facility'] != '')]
+        ehr = ehr[ehr['DOS'].notna()]
+        
         ehr['DOS_dt'] = pd.to_datetime(ehr['DOS'])
         ehr['Month'] = ehr['DOS_dt'].dt.strftime('%Y-%m')
         ehr['Facility_Normalized'] = ehr['Visit Facility'].apply(self._normalize_facility)
@@ -190,13 +195,17 @@ class QBPLReconciliation:
         
         print("\n--- Reconciling Totals ---")
         
+        # Filter out summary/total rows (rows with blank facility or no date)
+        ehr = self.ehr_df.copy()
+        ehr = ehr[ehr['Visit Facility'].notna() & (ehr['Visit Facility'] != '')]
+        ehr = ehr[ehr['DOS'].notna()]
+        
         # EHR totals
-        ehr_total = self.ehr_df['Total Paid'].sum()
-        ehr_patient = self.ehr_df['Patient Paid'].sum()
-        ehr_insurance = self.ehr_df['Primary Insurance Paid'].sum()
+        ehr_total = ehr['Total Paid'].sum()
+        ehr_patient = ehr['Patient Paid'].sum()
+        ehr_insurance = ehr['Primary Insurance Paid'].sum()
         
         # EHR by facility
-        ehr = self.ehr_df.copy()
         ehr['Facility_Normalized'] = ehr['Visit Facility'].apply(self._normalize_facility)
         ehr_greeley = ehr[ehr['Facility_Normalized'] == 'Greeley']['Total Paid'].sum()
         ehr_denver = ehr[ehr['Facility_Normalized'] == 'Denver']['Total Paid'].sum()
