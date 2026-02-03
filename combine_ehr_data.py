@@ -125,8 +125,8 @@ class EHRDataCombiner:
     
     def build_master_list(self) -> bool:
         """
-        Build master patient name -> ID mapping from Prompt data.
-        Normalizes names for matching.
+        Build master patient name -> ID mapping.
+        First loads from saved master list file, then adds any new Prompt patients.
         """
         try:
             print("\n--- Building Master Patient List ---")
@@ -135,10 +135,15 @@ class EHRDataCombiner:
                 print("ERROR: Prompt data not loaded")
                 return False
             
-            # Get unique patient -> ID mappings
-            master = self.prompt_df[['Patient', 'Patient Account Number']].drop_duplicates()
-            master = master.dropna(subset=['Patient', 'Patient Account Number'])
-            master = master[master['Patient'].str.strip() != '']
+            # Try to load existing master list with AMD patient IDs
+            master_file = 'data/master_patient_list.json'
+            if os.path.exists(master_file):
+                import json
+                with open(master_file, 'r') as f:
+                    self.master_list = json.load(f)
+                print(f"✓ Loaded master list from file: {len(self.master_list)} patients")
+            else:
+                self.master_list = {}
             
             # Create normalized name for matching
             # Prompt format: "Last, First" -> normalize to "FIRST LAST"
@@ -154,16 +159,22 @@ class EHRDataCombiner:
                     return f"{first} {last}".strip()
                 return name
             
-            master['Name_Normalized'] = master['Patient'].apply(normalize_prompt_name)
+            # Add any new Prompt patients not already in master list
+            master = self.prompt_df[['Patient', 'Patient Account Number']].drop_duplicates()
+            master = master.dropna(subset=['Patient', 'Patient Account Number'])
+            master = master[master['Patient'].str.strip() != '']
             
-            # Create lookup dictionary
-            self.master_list = {}
+            added = 0
             for _, row in master.iterrows():
-                norm_name = row['Name_Normalized']
-                if norm_name:
+                norm_name = normalize_prompt_name(row['Patient'])
+                if norm_name and norm_name not in self.master_list:
                     self.master_list[norm_name] = row['Patient Account Number']
+                    added += 1
             
-            print(f"✓ Built master list with {len(self.master_list)} unique patients")
+            if added > 0:
+                print(f"  Added {added} new patients from Prompt")
+            
+            print(f"✓ Total master list: {len(self.master_list)} unique patients")
             
             return True
             
