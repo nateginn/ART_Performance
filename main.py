@@ -311,25 +311,25 @@ def run_billing_comparison(sheet_id: str, amd_file: str = None, verbose: bool = 
 
 
 def run_qb_reconciliation(verbose: bool = False) -> bool:
-    """Run QuickBooks vs EHR reconciliation."""
+    """Run QuickBooks P&L vs EHR reconciliation."""
     print("\n" + "=" * 60)
-    print("QUICKBOOKS RECONCILIATION (EHR vs QB Deposits)")
+    print("QUICKBOOKS RECONCILIATION (EHR vs QB P&L)")
     print("=" * 60)
     
     try:
-        from qb_reconciliation import QBReconciliation
+        from qb_pl_reconciliation import QBPLReconciliation
         
-        reconciler = QBReconciliation()
+        reconciler = QBPLReconciliation()
         success = reconciler.run_full_reconciliation()
         
         if success:
-            print("\nQuickBooks reconciliation complete!")
+            print("\nQuickBooks P&L reconciliation complete!")
             print("Check the 'data' folder for output files.")
         
         return success
         
     except ImportError:
-        print("ERROR: qb_reconciliation.py not found")
+        print("ERROR: qb_pl_reconciliation.py not found")
         return False
     except Exception as e:
         print(f"ERROR running QB reconciliation: {e}")
