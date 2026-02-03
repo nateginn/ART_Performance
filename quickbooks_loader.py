@@ -40,6 +40,19 @@ class QuickBooksLoader:
         'Amount'
     ]
     
+    # Keywords to identify non-patient deposits (owner contributions, transfers, etc.)
+    NON_PATIENT_KEYWORDS = [
+        'capital call',
+        'transfer',
+        'ginn',
+        'berb',
+        'deficit deposit',
+        'sublease',
+        'loan',
+        'owner',
+        'contribution'
+    ]
+    
     def __init__(self):
         """Initialize the QuickBooks loader."""
         self.drive_accessor = GoogleDriveAccessor()
@@ -151,10 +164,19 @@ class QuickBooksLoader:
             # Drop rows with no amount
             data_df = data_df[data_df['Amount'].notna()]
             
+            # IMPORTANT: Remove duplicates - QB export shows same transaction 
+            # multiple times with different Cleared status (Reconciled, Uncleared, Cleared)
+            # Keep only one instance per unique transaction (date + amount + memo)
+            before_dedup = len(data_df)
+            data_df = data_df.drop_duplicates(subset=['Transaction_Date', 'Amount', 'Memo'], keep='first')
+            after_dedup = len(data_df)
+            if before_dedup != after_dedup:
+                print(f"  Removed {before_dedup - after_dedup} duplicate entries")
+            
             # Reset index
             data_df = data_df.reset_index(drop=True)
             
-            print(f"  Cleaned to {len(data_df)} deposit transactions")
+            print(f"  Cleaned to {len(data_df)} unique deposit transactions")
             return data_df
             
         except Exception as e:
@@ -227,13 +249,43 @@ class QuickBooksLoader:
                 'max': self.combined_df['Transaction_Date'].max().strftime('%Y-%m-%d')
             }
     
-    def get_deposits_by_date_range(self, start_date: str, end_date: str) -> pd.DataFrame:
+    def _is_non_patient_deposit(self, memo: str) -> bool:
+        """Check if a deposit is likely non-patient revenue based on memo."""
+        if pd.isna(memo):
+            return False
+        memo_lower = str(memo).lower()
+        return any(keyword in memo_lower for keyword in self.NON_PATIENT_KEYWORDS)
+    
+    def get_patient_deposits_only(self) -> pd.DataFrame:
+        """
+        Get only patient-related deposits (exclude owner contributions, transfers, etc.)
+        
+        Returns:
+            pd.DataFrame: Patient deposits only
+        """
+        if self.combined_df is None:
+            return pd.DataFrame()
+        
+        # Filter out non-patient deposits
+        mask = ~self.combined_df['Memo'].apply(self._is_non_patient_deposit)
+        patient_df = self.combined_df[mask].copy()
+        
+        excluded = len(self.combined_df) - len(patient_df)
+        excluded_amount = self.combined_df[~mask]['Amount'].sum()
+        
+        print(f"  Excluded {excluded} non-patient deposits (${excluded_amount:,.2f})")
+        print(f"  Patient deposits: {len(patient_df)} (${patient_df['Amount'].sum():,.2f})")
+        
+        return patient_df
+    
+    def get_deposits_by_date_range(self, start_date: str, end_date: str, patient_only: bool = False) -> pd.DataFrame:
         """
         Filter deposits by date range.
         
         Args:
             start_date: Start date (YYYY-MM-DD)
             end_date: End date (YYYY-MM-DD)
+            patient_only: If True, exclude non-patient deposits
             
         Returns:
             pd.DataFrame: Filtered deposits
@@ -241,11 +293,15 @@ class QuickBooksLoader:
         if self.combined_df is None:
             return pd.DataFrame()
         
+        df = self.combined_df
+        if patient_only:
+            df = self.get_patient_deposits_only()
+        
         start = pd.to_datetime(start_date)
         end = pd.to_datetime(end_date)
         
-        mask = (self.combined_df['Transaction_Date'] >= start) & (self.combined_df['Transaction_Date'] <= end)
-        return self.combined_df[mask].copy()
+        mask = (df['Transaction_Date'] >= start) & (df['Transaction_Date'] <= end)
+        return df[mask].copy()
     
     def get_deposits_by_facility(self, facility: str) -> pd.DataFrame:
         """

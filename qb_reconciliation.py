@@ -82,9 +82,12 @@ class QBReconciliation:
             print(f"ERROR loading EHR data: {e}")
             return False
     
-    def load_qb_data(self) -> bool:
+    def load_qb_data(self, patient_only: bool = True) -> bool:
         """
         Load QuickBooks deposit data.
+        
+        Args:
+            patient_only: If True, exclude non-patient deposits (transfers, capital, etc.)
         
         Returns:
             bool: True if successful
@@ -95,7 +98,12 @@ class QBReconciliation:
             print("ERROR: Could not load QB deposits")
             return False
         
-        self.qb_df = self.qb_loader.combined_df
+        if patient_only:
+            print("\nFiltering to patient deposits only...")
+            self.qb_df = self.qb_loader.get_patient_deposits_only()
+        else:
+            self.qb_df = self.qb_loader.combined_df
+        
         return True
     
     def _normalize_facility(self, facility: str) -> str:
