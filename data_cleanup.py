@@ -37,6 +37,7 @@ FILE_PATTERNS = [
     'comparison_report_',
     'deidentification_report_',
     'prompt_only_',
+    'unpaid_visits_',
 ]
 
 
