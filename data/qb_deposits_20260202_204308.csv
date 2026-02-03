@@ -1,0 +1,587 @@
+Account,Transaction_Date,Transaction_Type,Num,Customer,Vendor,Memo,Cleared,Amount,Facility
+,2025-05-02,Deposit,,,,REGULAR DEPOSIT,Reconciled,25000.0,Greeley
+,2025-05-02,Deposit,,,,REGULAR DEPOSIT,Cleared,25000.0,Denver
+,2025-05-02,Deposit,,,,REGULAR DEPOSIT,Uncleared,25000.0,Denver
+,2025-05-02,Deposit,,,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX7551,Uncleared,25000.0,Denver
+,2025-05-02,Deposit,,,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX7551,Cleared,25000.0,Denver
+,2025-05-02,Deposit,,,,REGULAR DEPOSIT,Uncleared,25000.0,Greeley
+,2025-05-02,Deposit,,,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX7607,Uncleared,25000.0,Greeley
+,2025-05-02,Deposit,,,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX7607,Reconciled,25000.0,Greeley
+,2025-05-29,Deposit,,Guardian Medical,,Sublease,Reconciled,225.0,Greeley
+,2025-05-29,Deposit,,Guardian Medical,,Sublease,,225.0,Greeley
+,2025-06-02,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,43.67,Greeley
+,2025-06-02,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,43.67,Greeley
+,2025-06-03,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,58.06,Greeley
+,2025-06-03,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,58.06,Greeley
+,2025-06-04,Deposit,,Patient Payment,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX5456,Cleared,251.51,Denver
+,2025-06-04,Deposit,,Patient Payment,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX5456,,251.51,Denver
+,2025-06-04,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,68.07,Greeley
+,2025-06-04,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,116.37,Greeley
+,2025-06-04,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,68.07,Greeley
+,2025-06-04,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,116.37,Greeley
+,2025-06-05,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,24.15,Greeley
+,2025-06-05,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,24.15,Greeley
+,2025-06-06,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,9.51,Greeley
+,2025-06-06,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,9.51,Greeley
+,2025-06-09,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,169.8,Greeley
+,2025-06-09,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,169.8,Greeley
+,2025-06-11,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,14.39,Greeley
+,2025-06-11,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,14.39,Greeley
+,2025-06-13,Deposit,,,,WEAVE PAYMENT PR  WEAVE PAYM WEAVE PAYMENT PR  WEAVE PAYM                     XXXXXX0883,Reconciled,43.67,Greeley
+,2025-06-13,Deposit,,,,WEAVE PAYMENT PR  WEAVE PAYM WEAVE PAYMENT PR  WEAVE PAYM                     XXXXXX0883,,43.67,Greeley
+,2025-06-16,Deposit,,,,WEAVE PAYMENT PR  WEAVE PAYM WEAVE PAYMENT PR  WEAVE PAYM                     XXXXXX9609,Reconciled,43.67,Greeley
+,2025-06-16,Deposit,,,,WEAVE PAYMENT PR  WEAVE PAYM WEAVE PAYMENT PR  WEAVE PAYM                     XXXXXX9609,,43.67,Greeley
+,2025-06-17,Deposit,,,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX5803,Reconciled,10000.0,Greeley
+,2025-06-17,Deposit,,,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX5803,Uncleared,10000.0,Greeley
+,2025-06-18,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,29.03,Greeley
+,2025-06-18,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,29.03,Greeley
+,2025-06-20,Deposit,,HSS,,REGULAR DEPOSIT,,2148.87,Denver
+,2025-06-20,Deposit,,HSS,,REGULAR DEPOSIT,Cleared,2148.87,Denver
+,2025-06-20,Deposit,,HSS,,REGULAR DEPOSIT,,376.02,Denver
+,2025-06-20,Deposit,,HSS,,REGULAR DEPOSIT,Cleared,376.02,Denver
+,2025-06-24,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,68.07,Greeley
+,2025-06-24,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,68.07,Greeley
+,2025-06-25,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,174.93,Greeley
+,2025-06-25,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,174.93,Greeley
+,2025-06-26,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,19.27,Greeley
+,2025-06-26,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,19.27,Greeley
+,2025-06-27,Deposit,,HSS,,,,11959.62,Denver
+,2025-06-27,Deposit,,HSS,,HSS,Cleared,11959.62,Denver
+,2025-06-30,Deposit,,,,,,406.81,Greeley
+,2025-06-30,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,72.7,Greeley
+,2025-06-30,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,72.7,Greeley
+,2025-06-30,Deposit,,,,June 2025,Cleared,406.81,Greeley
+,2025-07-01,Deposit,,Guardian Medical,,REGULAR DEPOSIT,Reconciled,225.0,Greeley
+,2025-07-01,Deposit,,Guardian Medical,,REGULAR DEPOSIT,,225.0,Greeley
+,2025-07-02,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,29.03,Greeley
+,2025-07-02,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,29.03,Greeley
+,2025-07-07,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX5921,Reconciled,2640.23,Greeley
+,2025-07-07,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX5921,,2640.23,Greeley
+,2025-07-11,Deposit,,HSS,,,Cleared,1896.49,Denver
+,2025-07-11,Deposit,,HSS,,,,1896.49,Denver
+,2025-07-11,Deposit,,,,,,9.51,Greeley
+,2025-07-11,Deposit,,,,,Reconciled,9.51,Greeley
+,2025-07-14,Deposit,,,TRIO,,,159.09,Greeley
+,2025-07-14,Deposit,,,TRIO,AUTO,Reconciled,159.09,Greeley
+,2025-07-14,Deposit,,,TRIO,AUTO,Reconciled,7222.51,Greeley
+,2025-07-14,Deposit,,,TRIO,,,7222.51,Greeley
+,2025-07-16,Deposit,,,,INTUIT            ACCTVERIFY INTUIT            ACCTVERIFY                     XXXXXX0716,Reconciled,0.24,Greeley
+,2025-07-16,Deposit,,,,INTUIT            ACCTVERIFY INTUIT            ACCTVERIFY                     XXXXXX0748,,-0.23,Denver
+,2025-07-16,Deposit,,,,INTUIT            ACCTVERIFY INTUIT            ACCTVERIFY                     XXXXXX0717,Reconciled,0.05,Greeley
+,2025-07-16,Deposit,,,,INTUIT            ACCTVERIFY INTUIT            ACCTVERIFY                     XXXXXX0717,Uncleared,-0.05,Greeley
+,2025-07-16,Deposit,,,,INTUIT            ACCTVERIFY INTUIT            ACCTVERIFY                     XXXXXX0748,Cleared,0.23,Denver
+,2025-07-16,Deposit,,,,INTUIT            ACCTVERIFY INTUIT            ACCTVERIFY                     XXXXXX0716,Uncleared,-0.24,Greeley
+,2025-07-16,Deposit,,,,INTUIT            ACCTVERIFY INTUIT            ACCTVERIFY                     XXXXXX0749,Cleared,0.16,Denver
+,2025-07-16,Deposit,,,,INTUIT            ACCTVERIFY INTUIT            ACCTVERIFY                     XXXXXX0749,,-0.16,Denver
+,2025-07-17,Deposit,,HSS,,,Cleared,147.6,Denver
+,2025-07-17,Deposit,,HSS,,,,147.6,Denver
+,2025-07-18,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX5502,,832.71,Greeley
+,2025-07-18,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,43.67,Greeley
+,2025-07-18,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX5502,Reconciled,832.71,Greeley
+,2025-07-18,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,43.67,Greeley
+,2025-07-23,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,38.54,Greeley
+,2025-07-23,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,38.54,Greeley
+,2025-07-25,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,77.83,Greeley
+,2025-07-25,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,77.83,Greeley
+,2025-07-25,Deposit,,HSS,,,Cleared,2528.0,Denver
+,2025-07-25,Deposit,,HSS,,,,2528.0,Denver
+,2025-07-28,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX1995,,417.6,Greeley
+,2025-07-28,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX1995,Reconciled,417.6,Greeley
+,2025-07-28,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,53.18,Greeley
+,2025-07-28,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,53.18,Greeley
+,2025-07-30,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,77.58,Greeley
+,2025-07-30,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Reconciled,77.58,Greeley
+,2025-07-31,Deposit,,,,July 2025,Cleared,636.05,Greeley
+,2025-07-31,Deposit,,,,,,636.05,Greeley
+,2025-08-01,Deposit,,HSS,,,Cleared,2836.1,Denver
+,2025-08-01,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,106.86,Greeley
+,2025-08-01,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX4559,Cleared,304.18,Greeley
+,2025-08-01,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX4559,,304.18,Greeley
+,2025-08-01,Deposit,,HSS,,,,2836.1,Denver
+,2025-08-01,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,106.86,Greeley
+,2025-08-04,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,77.83,Greeley
+,2025-08-04,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,77.83,Greeley
+,2025-08-06,Deposit,,Marrick Medical,,,,3033.34,Greeley
+,2025-08-06,Deposit,,,,,Cleared,4989.02,Greeley
+,2025-08-06,Deposit,,,,,,45.0,Greeley
+,2025-08-06,Deposit,,Weave,,,,1.33,Greeley
+,2025-08-06,Deposit,,Marrick Medical,,,,1427.76,Greeley
+,2025-08-06,Deposit,,Weave,,,,41.66,Greeley
+,2025-08-06,Deposit,,Marrick Medical,,,,322.97,Greeley
+,2025-08-06,Deposit,,Weave,,,,9.62,Greeley
+,2025-08-06,Deposit,,Weave,,,,88.22,Greeley
+,2025-08-06,Deposit,,Weave,,,,0.61,Greeley
+,2025-08-06,Deposit,,,,,,15.0,Greeley
+,2025-08-06,Deposit,,Weave,,,,8.81,Greeley
+,2025-08-06,Deposit,,Marrick Medical,,,,295.2,Greeley
+,2025-08-08,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,131.01,Greeley
+,2025-08-08,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,131.01,Greeley
+,2025-08-13,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,14.39,Greeley
+,2025-08-13,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,14.39,Greeley
+,2025-08-14,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX2390,Cleared,2808.81,Greeley
+,2025-08-14,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX2390,,2808.81,Greeley
+,2025-08-18,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,48.55,Greeley
+,2025-08-18,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,48.55,Greeley
+,2025-08-19,Deposit,,,HSS,,Cleared,860.64,Greeley
+,2025-08-19,Deposit,,,,,Cleared,43.67,Greeley
+,2025-08-19,Deposit,,,,,,43.67,Greeley
+,2025-08-19,Deposit,,,HSS,,,860.64,Greeley
+,2025-08-19,Deposit,,HSS,,,,4248.91,Denver
+,2025-08-19,Deposit,,HSS,,,Cleared,4248.91,Denver
+,2025-08-20,Deposit,,,,PNCBANK_XTRANSFR  ACCTVERIFY PNCBANK_XTRANSFR  ACCTVERIFY                     XXXXXX2683,Cleared,0.15,Greeley
+,2025-08-20,Deposit,,,,PNCBANK_XTRANSFR  ACCTVERIFY PNCBANK_XTRANSFR  ACCTVERIFY                     XXXXXX2683,,-0.15,Greeley
+,2025-08-20,Deposit,,,,PNCBANK_XTRANSFR  ACCTVERIFY PNCBANK_XTRANSFR  ACCTVERIFY                     XXXXXX2684,Cleared,0.17,Greeley
+,2025-08-20,Deposit,,,,PNCBANK_XTRANSFR  ACCTVERIFY PNCBANK_XTRANSFR  ACCTVERIFY                     XXXXXX2684,,-0.17,Greeley
+,2025-08-20,Deposit,,,,Patient Payments,,1037.65,Greeley
+,2025-08-20,Deposit,,,,,Cleared,1037.65,Greeley
+,2025-08-21,Deposit,,Guardian Medical,,,Cleared,225.0,Greeley
+,2025-08-21,Deposit,,,,,,82.46,Greeley
+,2025-08-21,Deposit,,Guardian Medical,,,,225.0,Greeley
+,2025-08-21,Deposit,,,,,Cleared,82.46,Greeley
+,2025-08-25,Deposit,,,TRIO,,Cleared,850.44,Denver
+,2025-08-25,Deposit,,,TRIO,,,850.44,Denver
+,2025-08-25,Deposit,,,,,,368.35,Greeley
+,2025-08-25,Deposit,,ART Management,,,Cleared,3000.0,Greeley
+,2025-08-25,Deposit,,ART Management,,,Uncleared,3000.0,Greeley
+,2025-08-25,Deposit,,,,,Cleared,368.35,Greeley
+,2025-08-26,Deposit,,,,,,434.9,Greeley
+,2025-08-26,Deposit,,,,,Cleared,434.9,Greeley
+,2025-08-26,Deposit,,,,,Uncleared,6000.0,Greeley
+,2025-08-26,Deposit,,,,,Cleared,390.96,Greeley
+,2025-08-26,Deposit,,,,,,91.33,Greeley
+,2025-08-26,Deposit,,,,,Cleared,91.33,Greeley
+,2025-08-26,Deposit,,,,BERB,Cleared,6000.0,Greeley
+,2025-08-26,Deposit,,,,,,390.96,Greeley
+,2025-08-27,Deposit,,,,,Cleared,116.62,Greeley
+,2025-08-27,Deposit,,,,,,116.62,Greeley
+,2025-08-28,Deposit,,,,,Cleared,2865.21,Greeley
+,2025-08-28,Deposit,,Marrick Medical,,,,2951.04,Greeley
+,2025-08-28,Deposit,,,,,Uncleared,-85.83,Greeley
+,2025-08-28,Deposit,,ART Management,,,Cleared,1000.0,Greeley
+,2025-08-28,Deposit,,ART Management,,,Uncleared,1000.0,Greeley
+,2025-08-29,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,135.89,Greeley
+,2025-08-29,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,135.89,Greeley
+,2025-08-31,Deposit,,,,August 2025,Cleared,568.52,Greeley
+,2025-08-31,Deposit,,,,,,568.52,Greeley
+,2025-09-02,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,24.15,Greeley
+,2025-09-02,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,24.15,Greeley
+,2025-09-03,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,48.55,Greeley
+,2025-09-03,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,48.55,Greeley
+,2025-09-03,Deposit,,Guardian Medical,,REGULAR DEPOSIT,Uncleared,225.0,Greeley
+,2025-09-03,Deposit,,Guardian Medical,,REGULAR DEPOSIT,,225.0,Greeley
+,2025-09-05,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,82.21,Greeley
+,2025-09-05,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,82.21,Greeley
+,2025-09-08,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,125.88,Greeley
+,2025-09-08,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX3473,Uncleared,609.88,Greeley
+,2025-09-08,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX3473,,609.88,Greeley
+,2025-09-08,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,125.88,Greeley
+,2025-09-09,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,24.15,Greeley
+,2025-09-09,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,24.15,Greeley
+,2025-09-10,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,14.39,Greeley
+,2025-09-10,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,14.39,Greeley
+,2025-09-10,Deposit,,ART DENVER,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX5311,Uncleared,1500.0,Greeley
+,2025-09-10,Deposit,,ART DENVER,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX5311,,1500.0,Greeley
+,2025-09-12,Deposit,,HSS,,,,2919.13,Denver
+,2025-09-12,Deposit,,Weave,,,Uncleared,43.67,Greeley
+,2025-09-12,Deposit,,Weave,,,,43.67,Greeley
+,2025-09-12,Deposit,,HSS,,,Cleared,2919.13,Denver
+,2025-09-12,Deposit,,,,,Uncleared,400.0,Greeley
+,2025-09-12,Deposit,,,,,,400.0,Greeley
+,2025-09-15,Deposit,,Weave,,,Uncleared,77.43,Greeley
+,2025-09-15,Deposit,,,TRIO,,Uncleared,1972.67,Greeley
+,2025-09-15,Deposit,,,TRIO,,,1972.67,Greeley
+,2025-09-15,Deposit,,Weave,,,,77.43,Greeley
+,2025-09-16,Deposit,,Weave,,,Uncleared,38.79,Greeley
+,2025-09-16,Deposit,,Weave,,,,38.79,Greeley
+,2025-09-17,Deposit,,Weave,,,Uncleared,155.16,Greeley
+,2025-09-17,Deposit,,Weave,,,,155.16,Greeley
+,2025-09-18,Deposit,,,,Lien Settlment,Uncleared,623.0,Greeley
+,2025-09-18,Deposit,,Weave,,,Uncleared,87.34,Greeley
+,2025-09-18,Deposit,,Weave,,,,87.34,Greeley
+,2025-09-18,Deposit,,,,,,623.0,Greeley
+,2025-09-19,Deposit,,,ART GREELEY LLC,,Cleared,1500.0,Denver
+,2025-09-19,Deposit,,HSS,,,Cleared,2251.56,Denver
+,2025-09-19,Deposit,,,HSS,,Uncleared,1772.52,Greeley
+,2025-09-19,Deposit,,,MEDPORT,,Uncleared,2021.77,Greeley
+,2025-09-19,Deposit,,,MEDPORT,,,2021.77,Greeley
+,2025-09-19,Deposit,,HSS,,,,2251.56,Denver
+,2025-09-19,Deposit,,,ART GREELEY LLC,,,1500.0,Denver
+,2025-09-19,Deposit,,,HSS,,,1772.52,Greeley
+,2025-09-22,Deposit,,,,,Uncleared,1330.54,Greeley
+,2025-09-22,Deposit,,,,,Uncleared,4000.0,Greeley
+,2025-09-22,Deposit,,,,ART Management,Uncleared,4000.0,Greeley
+,2025-09-22,Deposit,,,,,,1330.54,Greeley
+,2025-09-23,Deposit,,,ART GREELEY LLC,CHG Temp agency Reimbursement,Cleared,5120.0,Denver
+,2025-09-23,Deposit,,,ART GREELEY LLC,CHG Reimbursement PT,,-5120.0,Denver
+,2025-09-24,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,154.66,Greeley
+,2025-09-24,Deposit,,Marrick Medical,,,Uncleared,2745.88,Greeley
+,2025-09-24,Deposit,,Marrick Medical,,,,2745.88,Greeley
+,2025-09-24,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,154.66,Greeley
+,2025-09-25,Deposit,,,,,,65.0,Greeley
+,2025-09-25,Deposit,,,Cardigan Health,,,617.25,Denver
+,2025-09-25,Deposit,,,Cardigan Health,,Cleared,680.1,Denver
+,2025-09-25,Deposit,,,Cardigan Health,,,680.1,Denver
+,2025-09-25,Deposit,,,Cardigan Health,,,1904.46,Greeley
+,2025-09-25,Deposit,,,Cardigan Health,,Uncleared,1904.46,Greeley
+,2025-09-25,Deposit,,,Cardigan Health,,Cleared,617.25,Denver
+,2025-09-25,Deposit,,,Cardigan Health,,Uncleared,3196.34,Greeley
+,2025-09-25,Deposit,,,Cardigan Health,,,3196.34,Greeley
+,2025-09-25,Deposit,,,Cardigan Health,,Uncleared,2396.68,Greeley
+,2025-09-25,Deposit,,,,,,64.0,Greeley
+,2025-09-25,Deposit,,,,,,20.55,Greeley
+,2025-09-25,Deposit,,,,,,1.81,Greeley
+,2025-09-25,Deposit,,Marrick Medical,,9.11.2025,,2198.14,Greeley
+,2025-09-25,Deposit,,Marrick Medical,,8.29.2025,,700.06,Greeley
+,2025-09-25,Deposit,,,,,Uncleared,2876.84,Greeley
+,2025-09-25,Deposit,,,Cardigan Health,,,2396.68,Greeley
+,2025-09-26,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,9.51,Greeley
+,2025-09-26,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,9.51,Greeley
+,2025-09-26,Deposit,,,Cardigan Health,Cardigan Health   MercuryACH Cardigan Health   MercuryACH                     XXXXXX5423,,771.78,Denver
+,2025-09-26,Deposit,,,Cardigan Health,Cardigan Health   MercuryACH Cardigan Health   MercuryACH                     XXXXXX5423,Cleared,771.78,Denver
+,2025-09-29,Deposit,,HSS,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX8051,,601.19,Denver
+,2025-09-29,Deposit,,HSS,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX8051,Cleared,601.19,Denver
+,2025-09-29,Deposit,,Nationwide,,REGULAR DEPOSIT,,157.72,Greeley
+,2025-09-29,Deposit,,Nationwide,,REGULAR DEPOSIT,,157.72,Greeley
+,2025-09-29,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,77.33,Greeley
+,2025-09-29,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,77.33,Greeley
+,2025-09-29,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX8143,Uncleared,650.37,Greeley
+,2025-09-29,Deposit,,Nationwide,,REGULAR DEPOSIT,,82.1,Greeley
+,2025-09-29,Deposit,,Nationwide,,REGULAR DEPOSIT,Uncleared,82.1,Greeley
+,2025-09-29,Deposit,,Nationwide,,REGULAR DEPOSIT,Uncleared,157.72,Greeley
+,2025-09-29,Deposit,,Nationwide,,REGULAR DEPOSIT,Uncleared,157.72,Greeley
+,2025-09-29,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX8143,,650.37,Greeley
+,2025-09-30,Deposit,,,,September 2025,Cleared,724.79,Greeley
+,2025-09-30,Deposit,,,,,,724.79,Greeley
+,2025-10-01,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX4474,,147.6,Denver
+,2025-10-01,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX4474,Cleared,147.6,Denver
+,2025-10-01,Deposit,,Marrick Medical,,HNB - ECHO        HCCLAIMPMT HNB - ECHO        HCCLAIMPMT                     XXXXXX4314,,229.82,Greeley
+,2025-10-01,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX4475,,2181.65,Greeley
+,2025-10-01,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX4475,Uncleared,2181.65,Greeley
+,2025-10-01,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,53.18,Greeley
+,2025-10-01,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,53.18,Greeley
+,2025-10-01,Deposit,,Marrick Medical,,HNB - ECHO        HCCLAIMPMT HNB - ECHO        HCCLAIMPMT                     XXXXXX4314,Uncleared,229.82,Greeley
+,2025-10-03,Deposit,,,ART GREELEY LLC,,Cleared,1000.0,Denver
+,2025-10-03,Deposit,,,ART GREELEY LLC,,,1000.0,Denver
+,2025-10-03,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,140.77,Greeley
+,2025-10-03,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,140.77,Greeley
+,2025-10-03,Deposit,,,Nationwide Insurance,,Uncleared,369.0,Greeley
+,2025-10-03,Deposit,,,Nationwide Insurance,,,369.0,Greeley
+,2025-10-03,Deposit,,,Corvel,,Uncleared,291.58,Greeley
+,2025-10-03,Deposit,,,Corvel,,,291.58,Greeley
+,2025-10-06,Deposit,,,,,,1232.62,Denver
+,2025-10-06,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,72.7,Greeley
+,2025-10-06,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,72.7,Greeley
+,2025-10-06,Deposit,,,,UNKNOWN????,Cleared,1232.62,Denver
+,2025-10-06,Deposit,,,,,Uncleared,467.6,Greeley
+,2025-10-06,Deposit,,,,,,467.6,Greeley
+,2025-10-07,Deposit,,,,,Cleared,500.0,Denver
+,2025-10-07,Deposit,,,,,,500.0,Denver
+,2025-10-08,Deposit,,,,,,82.21,Greeley
+,2025-10-08,Deposit,,,,,Uncleared,82.21,Greeley
+,2025-10-09,Deposit,,Guardian Medical,,,Uncleared,225.0,Greeley
+,2025-10-09,Deposit,,Guardian Medical,,,,225.0,Greeley
+,2025-10-10,Deposit,,,,,Uncleared,53.18,Greeley
+,2025-10-10,Deposit,,,,,,53.18,Greeley
+,2025-10-14,Deposit,,,Cardigan Health,,,105.64,Denver
+,2025-10-14,Deposit,,,Cardigan Health,,Cleared,105.64,Denver
+,2025-10-14,Deposit,,,Corvel,,Uncleared,145.79,Greeley
+,2025-10-14,Deposit,,,Corvel,,,145.79,Greeley
+,2025-10-16,Deposit,,Marrick Medical,,,,1581.51,Greeley
+,2025-10-16,Deposit,,Marrick Medical,,,Uncleared,1581.51,Greeley
+,2025-10-16,Deposit,,,,,Cleared,1792.71,Denver
+,2025-10-16,Deposit,,,Marrick Medical,,,1847.29,Denver
+,2025-10-16,Deposit,,,,,,54.58,Denver
+,2025-10-17,Deposit,,HSS,,,Cleared,2409.4,Denver
+,2025-10-17,Deposit,,HSS,,,Cleared,3631.5,Denver
+,2025-10-17,Deposit,,HSS,,,,3631.5,Denver
+,2025-10-17,Deposit,,,HSS,,Uncleared,819.77,Greeley
+,2025-10-17,Deposit,,HSS,,,,2409.4,Denver
+,2025-10-17,Deposit,,,HSS,,,819.77,Greeley
+,2025-10-17,Deposit,,,HSS,,,1207.4,Greeley
+,2025-10-17,Deposit,,,HSS,,Uncleared,1207.4,Greeley
+,2025-10-17,Deposit,,,,,Uncleared,-4.35,Greeley
+,2025-10-17,Deposit,,,,,,130.0,Greeley
+,2025-10-17,Deposit,,,,10/13-10/14/2025,Uncleared,125.65,Greeley
+,2025-10-17,Deposit,,,TRIO,,,4349.08,Greeley
+,2025-10-17,Deposit,,,TRIO,,Uncleared,4349.08,Greeley
+,2025-10-17,Deposit,,,Cardigan Health,,,17.82,Greeley
+,2025-10-17,Deposit,,,Cardigan Health,,Uncleared,17.82,Greeley
+,2025-10-20,Deposit,,,TRIO,,,1566.48,Greeley
+,2025-10-20,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,135.89,Greeley
+,2025-10-20,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,135.89,Greeley
+,2025-10-20,Deposit,,,TRIO,,Uncleared,1566.48,Greeley
+,2025-10-22,Deposit,,MEDPORT,,Medport Billing   GR0552 Medport Billing   GR0552                         XXXXXX9397,Cleared,3367.42,Denver
+,2025-10-22,Deposit,,Marrick Medical,,,Uncleared,2744.54,Greeley
+,2025-10-22,Deposit,,Marrick Medical,,,,2744.54,Greeley
+,2025-10-22,Deposit,,MEDPORT,,Medport Billing   GR0552 Medport Billing   GR0552                         XXXXXX9397,,3367.42,Denver
+,2025-10-22,Deposit,,Patient Payment,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX6458,Cleared,718.03,Denver
+,2025-10-22,Deposit,,Patient Payment,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX6458,,718.03,Denver
+,2025-10-24,Deposit,,,HSS,,Uncleared,557.82,Greeley
+,2025-10-24,Deposit,,,Sedgwick,,,1192.58,Greeley
+,2025-10-24,Deposit,,,Sedgwick,,Uncleared,1192.58,Greeley
+,2025-10-24,Deposit,,,Sedgwick,,,112.52,Greeley
+,2025-10-24,Deposit,,,Sedgwick,,Uncleared,112.52,Greeley
+,2025-10-24,Deposit,,,Sedgwick,,,112.52,Greeley
+,2025-10-24,Deposit,,,Sedgwick,,Uncleared,112.52,Greeley
+,2025-10-24,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,131.01,Greeley
+,2025-10-24,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,131.01,Greeley
+,2025-10-24,Deposit,,PROGRESSIVE,,REGULAR DEPOSIT,Cleared,213.0,Denver
+,2025-10-24,Deposit,,,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX8471,,1207.98,Denver
+,2025-10-24,Deposit,,,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX8471,Cleared,1207.98,Denver
+,2025-10-24,Deposit,,PROGRESSIVE,,REGULAR DEPOSIT,,213.0,Denver
+,2025-10-24,Deposit,,,HSS,,,557.82,Greeley
+,2025-10-27,Deposit,,,TRIO,,Uncleared,407.04,Greeley
+,2025-10-27,Deposit,,,TRIO,,Cleared,387.73,Denver
+,2025-10-27,Deposit,,,TRIO,,,387.73,Denver
+,2025-10-27,Deposit,,,TRIO,,,407.04,Greeley
+,2025-10-27,Deposit,,,,,Uncleared,97.1,Greeley
+,2025-10-27,Deposit,,,,,,97.1,Greeley
+,2025-10-28,Deposit,,,MoveDocs,,Uncleared,3367.42,Greeley
+,2025-10-28,Deposit,,,MoveDocs,,,3367.42,Greeley
+,2025-10-29,Deposit,,Marrick Medical,,,Uncleared,295.2,Greeley
+,2025-10-29,Deposit,,Marrick Medical,,,,295.2,Greeley
+,2025-10-29,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,67.82,Greeley
+,2025-10-29,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,67.82,Greeley
+,2025-10-30,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,38.79,Greeley
+,2025-10-30,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,38.79,Greeley
+,2025-10-31,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX7106,Uncleared,1036.34,Greeley
+,2025-10-31,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX7106,,1036.34,Greeley
+,2025-10-31,Deposit,,"Zobel Law, LLC",,,Cleared,13007.88,Greeley
+,2025-10-31,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX0378,,19.11,Denver
+,2025-10-31,Deposit,,HSS,,,,2406.69,Denver
+,2025-10-31,Deposit,,HSS,,,Cleared,2406.69,Denver
+,2025-10-31,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX7105,,152.03,Denver
+,2025-10-31,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX7105,Cleared,152.03,Denver
+,2025-10-31,Deposit,,,Cardigan Health,Cardigan Health   MercuryACH Cardigan Health   MercuryACH                     XXXXXX6886,,1039.22,Denver
+,2025-10-31,Deposit,,,Cardigan Health,Cardigan Health   MercuryACH Cardigan Health   MercuryACH                     XXXXXX6886,Cleared,1039.22,Denver
+,2025-10-31,Deposit,,,Marrick Medical,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX0378,,650.24,Denver
+,2025-10-31,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX0378,Cleared,631.13,Denver
+,2025-10-31,Deposit,,"Zobel Law, LLC",,,,13007.88,Greeley
+,2025-11-03,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,48.3,Greeley
+,2025-11-03,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX7375,Uncleared,498.21,Greeley
+,2025-11-03,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX7375,,498.21,Greeley
+,2025-11-03,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,48.3,Greeley
+,2025-11-04,Deposit,,,Corvel,REGULAR DEPOSIT,,145.79,Greeley
+,2025-11-04,Deposit,,,Sedgwick,REGULAR DEPOSIT,Uncleared,317.15,Greeley
+,2025-11-04,Deposit,,Nationwide,,REGULAR DEPOSIT,Uncleared,287.28,Greeley
+,2025-11-04,Deposit,,Nationwide,,REGULAR DEPOSIT,,287.28,Greeley
+,2025-11-04,Deposit,,Nationwide,,REGULAR DEPOSIT,Uncleared,183.28,Greeley
+,2025-11-04,Deposit,,Nationwide,,REGULAR DEPOSIT,,183.28,Greeley
+,2025-11-04,Deposit,,Nationwide,,REGULAR DEPOSIT,Uncleared,157.72,Greeley
+,2025-11-04,Deposit,,Nationwide,,REGULAR DEPOSIT,,157.72,Greeley
+,2025-11-04,Deposit,,,Corvel,REGULAR DEPOSIT,Uncleared,155.78,Greeley
+,2025-11-04,Deposit,,,Corvel,REGULAR DEPOSIT,,155.78,Greeley
+,2025-11-04,Deposit,,,Corvel,REGULAR DEPOSIT,Uncleared,145.79,Greeley
+,2025-11-04,Deposit,,,Sedgwick,REGULAR DEPOSIT,,317.15,Greeley
+,2025-11-04,Deposit,,Nationwide,,REGULAR DEPOSIT,Uncleared,341.0,Greeley
+,2025-11-04,Deposit,,Nationwide,,REGULAR DEPOSIT,,341.0,Greeley
+,2025-11-04,Deposit,,Guardian Medical,,REGULAR DEPOSIT,Uncleared,225.0,Greeley
+,2025-11-04,Deposit,,Guardian Medical,,REGULAR DEPOSIT,,225.0,Greeley
+,2025-11-05,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,865.51,Greeley
+,2025-11-05,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,865.51,Greeley
+,2025-11-06,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,482.24,Greeley
+,2025-11-06,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,482.24,Greeley
+,2025-11-10,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Uncleared,169.55,Greeley
+,2025-11-10,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,169.55,Greeley
+,2025-11-10,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX3279,Uncleared,569.34,Greeley
+,2025-11-10,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX3279,,569.34,Greeley
+,2025-11-10,Deposit,,HSS,,,Cleared,1231.74,Denver
+,2025-11-10,Deposit,,HSS,,,,1231.74,Denver
+,2025-11-13,Deposit,,,,,Cleared,58.06,Greeley
+,2025-11-13,Deposit,,,,,,58.06,Greeley
+,2025-11-14,Deposit,,,Marrick Medical,,,685.32,Denver
+,2025-11-14,Deposit,,,,,,126.13,Greeley
+,2025-11-14,Deposit,,,,,Cleared,126.13,Greeley
+,2025-11-14,Deposit,,Marrick Medical,,,,1390.41,Greeley
+,2025-11-14,Deposit,,Marrick Medical,,,Cleared,1390.41,Greeley
+,2025-11-14,Deposit,,,Marrick Medical,,Cleared,685.32,Denver
+,2025-11-17,Deposit,,,TRIO,,Cleared,2880.54,Greeley
+,2025-11-17,Deposit,,,,,,106.61,Greeley
+,2025-11-17,Deposit,,,TRIO,,,2880.54,Greeley
+,2025-11-17,Deposit,,,,,Cleared,106.61,Greeley
+,2025-11-17,Deposit,,,TRIO,,Cleared,598.44,Denver
+,2025-11-17,Deposit,,,TRIO,,,598.44,Denver
+,2025-11-19,Deposit,,,,,Cleared,324.19,Greeley
+,2025-11-19,Deposit,,,Marrick Medical,11/13/2025,Cleared,2026.13,Denver
+,2025-11-19,Deposit,,,Marrick Medical,,,2026.13,Denver
+,2025-11-19,Deposit,,HSS,,,,1669.8,Denver
+,2025-11-19,Deposit,,,Cardigan Health,,Cleared,595.5,Denver
+,2025-11-19,Deposit,,,HSS,,,410.11,Greeley
+,2025-11-19,Deposit,,,HSS,,Cleared,410.11,Greeley
+,2025-11-19,Deposit,,,,,,324.19,Greeley
+,2025-11-19,Deposit,,,Cardigan Health,,,595.5,Denver
+,2025-11-19,Deposit,,Marrick Medical,,,,2315.38,Greeley
+,2025-11-19,Deposit,,Marrick Medical,,11/13/2025,Cleared,2315.38,Greeley
+,2025-11-19,Deposit,,HSS,,,Cleared,1669.8,Denver
+,2025-11-20,Deposit,,MEDPORT,,Medport Billing   GR0592 Medport Billing   GR0592                         XXXXXX4321,Cleared,73.31,Denver
+,2025-11-20,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,48.3,Greeley
+,2025-11-20,Deposit,,,MEDPORT,Medport Billing   GR0592 Medport Billing   GR0592                         XXXXXX4322,Cleared,114.91,Greeley
+,2025-11-20,Deposit,,,MEDPORT,Medport Billing   GR0592 Medport Billing   GR0592                         XXXXXX4322,,114.91,Greeley
+,2025-11-20,Deposit,,MEDPORT,,Medport Billing   GR0592 Medport Billing   GR0592                         XXXXXX4321,,73.31,Denver
+,2025-11-20,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,48.3,Greeley
+,2025-11-21,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,126.38,Greeley
+,2025-11-21,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,126.38,Greeley
+,2025-11-21,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX8399,,114.91,Greeley
+,2025-11-21,Deposit,,HSS,,,,3041.55,Denver
+,2025-11-21,Deposit,,HSS,,,Cleared,3041.55,Denver
+,2025-11-21,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX8399,Cleared,114.91,Greeley
+,2025-11-24,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,87.34,Greeley
+,2025-11-24,Deposit,,,TRIO,,,146.78,Denver
+,2025-11-24,Deposit,,,TRIO,,Cleared,146.78,Denver
+,2025-11-24,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,87.34,Greeley
+,2025-11-26,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,77.58,Greeley
+,2025-11-26,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,77.58,Greeley
+,2025-11-26,Deposit,,,TRIO,,,1557.73,Greeley
+,2025-11-26,Deposit,,,TRIO,,Cleared,1557.73,Greeley
+,2025-11-28,Deposit,,Marrick Medical,,HNB - ECHO        HCCLAIMPMT HNB - ECHO        HCCLAIMPMT                     XXXXXX5847,Cleared,147.6,Greeley
+,2025-11-28,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,87.34,Greeley
+,2025-11-28,Deposit,,Marrick Medical,,HNB - ECHO        HCCLAIMPMT HNB - ECHO        HCCLAIMPMT                     XXXXXX5847,,147.6,Greeley
+,2025-11-28,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,87.34,Greeley
+,2025-11-30,Deposit,,,Marrick Medical,,Cleared,2683.38,Denver
+,2025-11-30,Deposit,,,,,,292.37,Greeley
+,2025-11-30,Deposit,,,,PNCBK CK WEBXFR TRANSFER PNCBK CK WEBXFR TRANSFER XXXXXX6295,Cleared,1381.67,Greeley
+,2025-11-30,Deposit,,,,PNCBK CK WEBXFR   TRANSFER PNCBK CK WEBXFR   TRANSFER                       XXXXXX6295,,1381.67,Greeley
+,2025-11-30,Deposit,,,,,,295.2,Greeley
+,2025-11-30,Deposit,,,,,Cleared,1177.97,Greeley
+,2025-11-30,Deposit,,Marrick Medical,,,,2895.67,Greeley
+,2025-11-30,Deposit,,Marrick Medical,,,Cleared,2895.67,Greeley
+,2025-11-30,Deposit,,,"Prove Partners, LLC",,,590.4,Greeley
+,2025-11-30,Deposit,,,Marrick Medical,,,2683.38,Denver
+,2025-12-01,Deposit,,MEDPORT,,,,73.3,Denver
+,2025-12-01,Deposit,,,TRIO,,Cleared,235.7,Denver
+,2025-12-01,Deposit,,,TRIO,,,235.7,Denver
+,2025-12-01,Deposit,,MEDPORT,,,Cleared,73.3,Denver
+,2025-12-01,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,43.67,Greeley
+,2025-12-01,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,43.67,Greeley
+,2025-12-02,Deposit,,HSS,,,Cleared,2113.27,Denver
+,2025-12-02,Deposit,,HSS,,,,2113.27,Denver
+,2025-12-03,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,67.57,Greeley
+,2025-12-03,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,67.57,Greeley
+,2025-12-05,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,48.55,Greeley
+,2025-12-05,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX4047,Cleared,820.22,Greeley
+,2025-12-05,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX4047,,820.22,Greeley
+,2025-12-05,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,48.55,Greeley
+,2025-12-08,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,62.94,Greeley
+,2025-12-08,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,62.94,Greeley
+,2025-12-10,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,155.16,Greeley
+,2025-12-10,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,155.16,Greeley
+,2025-12-11,Deposit,,,,,Cleared,1320.91,Greeley
+,2025-12-11,Deposit,,,,,,115.0,Greeley
+,2025-12-11,Deposit,,,TRIO,,,1107.55,Greeley
+,2025-12-11,Deposit,,,TRIO,,Cleared,1107.55,Greeley
+,2025-12-11,Deposit,,,,,Uncleared,-3.51,Greeley
+,2025-12-11,Deposit,,,,Sedgwick,,1246.57,Greeley
+,2025-12-11,Deposit,,,,,Uncleared,-37.15,Greeley
+,2025-12-11,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,87.34,Greeley
+,2025-12-11,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,87.34,Greeley
+,2025-12-12,Deposit,,Nationwide,,S.Purdy,,183.28,Greeley
+,2025-12-12,Deposit,,Nationwide,,S.Purdy,,341.0,Greeley
+,2025-12-12,Deposit,,Nationwide,,S.Purdy,,274.16,Greeley
+,2025-12-12,Deposit,,Nationwide,,S.Purdy,,457.44,Greeley
+,2025-12-12,Deposit,,Nationwide,,S.Purdy,,287.28,Greeley
+,2025-12-12,Deposit,,Guardian Medical,,December 2025,,225.0,Greeley
+,2025-12-12,Deposit,,,,REGULAR DEPOSIT,Cleared,1951.44,Greeley
+,2025-12-12,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,14.39,Greeley
+,2025-12-12,Deposit,,Nationwide,,S.Purdy,,183.28,Greeley
+,2025-12-12,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,14.39,Greeley
+,2025-12-15,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX0443,Cleared,295.2,Denver
+,2025-12-15,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX0443,,295.2,Denver
+,2025-12-15,Deposit,,,TRIO,,,266.94,Greeley
+,2025-12-15,Deposit,,,TRIO,,Cleared,266.94,Greeley
+,2025-12-17,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,91.52,Greeley
+,2025-12-17,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,91.52,Greeley
+,2025-12-18,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,87.34,Greeley
+,2025-12-18,Deposit,,,Marrick Medical,,,1874.63,Denver
+,2025-12-18,Deposit,,,Marrick Medical,,Cleared,1874.63,Denver
+,2025-12-18,Deposit,,Marrick Medical,,,Cleared,1333.01,Greeley
+,2025-12-18,Deposit,,Marrick Medical,,,,1333.01,Greeley
+,2025-12-18,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,87.34,Greeley
+,2025-12-19,Deposit,,HSS,,,Cleared,3233.96,Denver
+,2025-12-19,Deposit,,HSS,,,,3233.96,Denver
+,2025-12-22,Deposit,,,HSS,,Cleared,883.09,Greeley
+,2025-12-22,Deposit,,,HSS,,,883.09,Greeley
+,2025-12-22,Deposit,,,Sedgwick,VPAY E054601432   HCCLAIMPMT VPAY E054601432   HCCLAIMPMT                     XXXXXX9035,Cleared,595.88,Greeley
+,2025-12-22,Deposit,,,Sedgwick,VPAY E054601432   HCCLAIMPMT VPAY E054601432   HCCLAIMPMT                     XXXXXX9035,,595.88,Greeley
+,2025-12-24,Deposit,,,Marrick Medical,HNB - ECHO        HCCLAIMPMT HNB - ECHO        HCCLAIMPMT                     XXXXXX6835,,1550.37,Denver
+,2025-12-24,Deposit,,,Marrick Medical,HNB - ECHO        HCCLAIMPMT HNB - ECHO        HCCLAIMPMT                     XXXXXX6835,Cleared,1550.37,Denver
+,2025-12-24,Deposit,,Marrick Medical,,HNB - ECHO        HCCLAIMPMT HNB - ECHO        HCCLAIMPMT                     XXXXXX6837,Cleared,1929.23,Greeley
+,2025-12-24,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,53.18,Greeley
+,2025-12-24,Deposit,,Marrick Medical,,HNB - ECHO        HCCLAIMPMT HNB - ECHO        HCCLAIMPMT                     XXXXXX6837,,1929.23,Greeley
+,2025-12-24,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,53.18,Greeley
+,2025-12-29,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX4511,Cleared,147.6,Denver
+,2025-12-29,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX4509,,912.16,Greeley
+,2025-12-29,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX4509,Cleared,912.16,Greeley
+,2025-12-29,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX4511,,147.6,Denver
+,2025-12-30,Deposit,,,Marrick Medical,HNB - ECHO        HCCLAIMPMT HNB - ECHO        HCCLAIMPMT                     XXXXXX9856,Cleared,1593.64,Denver
+,2025-12-30,Deposit,,,Marrick Medical,HNB - ECHO        HCCLAIMPMT HNB - ECHO        HCCLAIMPMT                     XXXXXX9856,,1593.64,Denver
+,2025-12-30,Deposit,,HSS,,,Cleared,1203.63,Denver
+,2025-12-30,Deposit,,HSS,,,,1203.63,Denver
+,2025-12-30,Deposit,,,HSS,,,529.45,Greeley
+,2025-12-30,Deposit,,,HSS,,Cleared,529.45,Greeley
+,2025-12-30,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,72.57,Greeley
+,2025-12-30,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,72.57,Greeley
+,2025-12-31,Deposit,,,Marrick Medical,,Cleared,1109.78,Denver
+,2025-12-31,Deposit,,,Marrick Medical,,,1109.78,Denver
+,2025-12-31,Deposit,,,,,,2381.2,Greeley
+,2025-12-31,Deposit,,,,Dec 2025,Cleared,2381.2,Greeley
+,2025-12-31,Deposit,,Nationwide,,,,287.28,Greeley
+,2025-12-31,Deposit,,Nationwide,,,Cleared,287.28,Greeley
+,2025-12-31,Deposit,,Marrick Medical,,,,1804.97,Greeley
+,2025-12-31,Deposit,,Marrick Medical,,,Cleared,1804.97,Greeley
+,2025-12-31,Deposit,,,,,,183.94,Greeley
+,2025-12-31,Deposit,,,,,Cleared,183.94,Greeley
+,2026-01-02,Deposit,,MEDPORT,,Medport Billing   GR0661 Medport Billing   GR0661                         XXXXXX5715,Cleared,73.31,Denver
+,2026-01-02,Deposit,,MEDPORT,,Medport Billing   GR0661 Medport Billing   GR0661                         XXXXXX5715,,73.31,Denver
+,2026-01-06,Deposit,,,,PROVE Partners    ACCTVERIFY PROVE Partners    ACCTVERIFY                     XXXXXX7971,Cleared,0.01,Greeley
+,2026-01-06,Deposit,,,,PROVE Partners    ACCTVERIFY PROVE Partners    ACCTVERIFY                     XXXXXX7971,,0.01,Greeley
+,2026-01-07,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,334.72,Greeley
+,2026-01-07,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,334.72,Greeley
+,2026-01-08,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,18.06,Greeley
+,2026-01-08,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,18.06,Greeley
+,2026-01-08,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX6518,Cleared,467.18,Greeley
+,2026-01-08,Deposit,,,TRIO,Omni HC-IF        ADVANCE Omni HC-IF        ADVANCE                        XXXXXX6518,,467.18,Greeley
+,2026-01-09,Deposit,,,"Prove Partners, LLC",PROVE Partners    Bill.com PROVE Partners    Bill.com                       XXXXXX6148,Cleared,73.31,Greeley
+,2026-01-09,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,62.94,Greeley
+,2026-01-09,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,62.94,Greeley
+,2026-01-09,Deposit,,,"Prove Partners, LLC",PROVE Partners    Bill.com PROVE Partners    Bill.com                       XXXXXX6148,,73.31,Greeley
+,2026-01-12,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,58.06,Greeley
+,2026-01-12,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,58.06,Greeley
+,2026-01-13,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX0787,,410.11,Greeley
+,2026-01-13,Deposit,,HSS,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX9627,,2180.45,Denver
+,2026-01-13,Deposit,,HSS,,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX9627,Cleared,2180.45,Denver
+,2026-01-13,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX0787,Cleared,410.11,Greeley
+,2026-01-14,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,91.97,Greeley
+,2026-01-14,Deposit,,Marrick Medical,,,Cleared,906.28,Greeley
+,2026-01-14,Deposit,,,Marrick Medical,,,1158.93,Denver
+,2026-01-14,Deposit,,,Marrick Medical,,Cleared,1158.93,Denver
+,2026-01-14,Deposit,,Marrick Medical,,,,906.28,Greeley
+,2026-01-14,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,91.97,Greeley
+,2026-01-16,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,14.39,Greeley
+,2026-01-16,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,14.39,Greeley
+,2026-01-20,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX1851,,114.91,Greeley
+,2026-01-20,Deposit,,,HSS,TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX1851,Cleared,114.91,Greeley
+,2026-01-21,Deposit,,,,,,1537.87,Greeley
+,2026-01-21,Deposit,,,,December 2025,Cleared,1537.87,Greeley
+,2026-01-22,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,Cleared,158.82,Greeley
+,2026-01-22,Deposit,,,,GINN Capital Call,Uncleared,4000.0,Denver
+,2026-01-22,Deposit,,,,Weave Payment Pr  Weave Paym Weave Payment Pr  Weave Paym                     XXXXXX9177,,158.82,Greeley
+,2026-01-22,Deposit,,,,GINN Capital Call,Cleared,4000.0,Denver
+,2026-01-23,Deposit,,,,"Capital Call BERB
+TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX0751",Uncleared,12000.0,Denver
+,2026-01-23,Deposit,,,,"Capital Call BERB
+TRANSFER          ONLINE TRANSFER          ONLINE                         XXXXXX0751",Cleared,12000.0,Denver
+,2026-01-23,Deposit,,,,Ginn 6 month deficit deposit to equal $100k May - Oct.,Uncleared,8293.1,Greeley
+,2026-01-23,Deposit,,,,Ginn 6 month deficit deposit to equal $100k May - Oct.,Cleared,8293.1,Greeley
+,2026-01-26,Deposit,,,Sedgwick,VPAY E055863344   HCCLAIMPMT VPAY E055863344   HCCLAIMPMT                     XXXXXX6674,,148.97,Greeley
+,2026-01-26,Deposit,,,Sedgwick,VPAY E055863344   HCCLAIMPMT VPAY E055863344   HCCLAIMPMT                     XXXXXX6674,Cleared,148.97,Greeley
+,2026-01-28,Deposit,,HSS,,,,2577.91,Denver
+,2026-01-28,Deposit,,HSS,,,Uncleared,2577.91,Denver
+,2026-01-28,Deposit,,,Marrick Medical,,,5447.15,Denver
+,2026-01-28,Deposit,,,,,Uncleared,-0.61,Greeley
+,2026-01-28,Deposit,,Marrick Medical,,,Uncleared,1600.0,Greeley
+,2026-01-28,Deposit,,Marrick Medical,,,,1600.0,Greeley
+,2026-01-28,Deposit,,,,,Uncleared,14.39,Greeley
+,2026-01-28,Deposit,,,,,,15.0,Greeley
+,2026-01-28,Deposit,,,Marrick Medical,,Uncleared,5447.15,Denver
+,2026-01-31,Deposit,,Nationwide,,,,287.28,Greeley
+,2026-01-31,Deposit,,Nationwide,,,Uncleared,287.28,Greeley

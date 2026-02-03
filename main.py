@@ -83,6 +83,13 @@ Examples:
         help='Path to AMD CSV file for billing comparison'
     )
     
+    # QuickBooks reconciliation (Phase 3)
+    parser.add_argument(
+        '--qb-reconcile',
+        action='store_true',
+        help='Run EHR vs QuickBooks deposit reconciliation (Phase 3)'
+    )
+    
     # Display options
     parser.add_argument(
         '--quiet', '-q',
@@ -303,6 +310,32 @@ def run_billing_comparison(sheet_id: str, amd_file: str = None, verbose: bool = 
         return False
 
 
+def run_qb_reconciliation(verbose: bool = False) -> bool:
+    """Run QuickBooks vs EHR reconciliation."""
+    print("\n" + "=" * 60)
+    print("QUICKBOOKS RECONCILIATION (EHR vs QB Deposits)")
+    print("=" * 60)
+    
+    try:
+        from qb_reconciliation import QBReconciliation
+        
+        reconciler = QBReconciliation()
+        success = reconciler.run_full_reconciliation()
+        
+        if success:
+            print("\nQuickBooks reconciliation complete!")
+            print("Check the 'data' folder for output files.")
+        
+        return success
+        
+    except ImportError:
+        print("ERROR: qb_reconciliation.py not found")
+        return False
+    except Exception as e:
+        print(f"ERROR running QB reconciliation: {e}")
+        return False
+
+
 def main():
     """Main entry point."""
     args = parse_args()
@@ -321,6 +354,11 @@ def main():
             amd_file=args.amd_file,
             verbose=args.verbose
         )
+        sys.exit(0 if success else 1)
+    
+    # Handle QB reconciliation separately
+    if args.qb_reconcile:
+        success = run_qb_reconciliation(verbose=args.verbose)
         sys.exit(0 if success else 1)
     
     # Load data
