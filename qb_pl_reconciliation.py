@@ -11,6 +11,7 @@ from datetime import datetime
 
 from quickbooks_pl_loader import QuickBooksPLLoader
 from data_loader import GoogleSheetsLoader, DataLoader
+from combine_ehr_data import EHRDataCombiner
 
 
 class QBPLReconciliation:
@@ -19,25 +20,23 @@ class QBPLReconciliation:
     Compares what EHR shows as collected vs QB P&L income by month and facility.
     """
     
-    # Default Google Sheet ID for EHR data
-    DEFAULT_SHEET_ID = "1p8goF6Yt_2ymJjFc9f-UdprXxTXmR3WhL2FZs0Xe8nI"
-    
     # Facility mapping between EHR and QB
     FACILITY_MAP = {
         'ART Denver': 'Denver',
         'ART Greeley': 'Greeley',
         'Denver': 'Denver',
-        'Greeley': 'Greeley'
+        'Greeley': 'Greeley',
+        'Unknown': 'Unknown'
     }
     
-    def __init__(self, ehr_sheet_id: str = None):
+    def __init__(self, use_combined_data: bool = True):
         """
         Initialize the reconciliation.
         
         Args:
-            ehr_sheet_id: Google Sheet ID for EHR revenue data
+            use_combined_data: If True, use combined AMD+Prompt data
         """
-        self.ehr_sheet_id = ehr_sheet_id or self.DEFAULT_SHEET_ID
+        self.use_combined_data = use_combined_data
         self.qb_loader = QuickBooksPLLoader()
         self.ehr_df = None
         self.qb_df = None
@@ -46,7 +45,7 @@ class QBPLReconciliation:
         
     def load_ehr_data(self) -> bool:
         """
-        Load EHR revenue data from Google Sheets.
+        Load EHR revenue data - either combined AMD+Prompt or Prompt only.
         
         Returns:
             bool: True if successful
@@ -54,26 +53,45 @@ class QBPLReconciliation:
         print("\n--- Loading EHR Revenue Data ---")
         
         try:
-            sheets_loader = GoogleSheetsLoader()
-            
-            if not sheets_loader.open_sheet(sheet_id=self.ehr_sheet_id):
-                print("ERROR: Could not open EHR Google Sheet")
-                return False
-            
-            df = sheets_loader.load_worksheet("All Data")
-            
-            if df is None:
-                print("ERROR: Could not load EHR worksheet")
-                return False
-            
-            # Clean the data
-            loader = DataLoader()
-            loader.current_dataframe = df
-            loader.clean_currency_columns()
-            loader.clean_date_columns()
-            
-            self.ehr_df = loader.current_dataframe
-            print(f"✓ Loaded {len(self.ehr_df)} EHR records")
+            if self.use_combined_data:
+                # Use combined AMD + Prompt data
+                combiner = EHRDataCombiner()
+                if not combiner.run():
+                    print("ERROR: Could not combine EHR data")
+                    return False
+                
+                # Map combined data to expected format
+                df = combiner.combined_df.copy()
+                df['DOS'] = df['Service_Date']
+                df['Visit Facility'] = df['Visit_Facility']
+                df['Total Paid'] = df['Total_Paid']
+                df['Patient Paid'] = df['Patient_Payments']
+                df['Primary Insurance Paid'] = df['Insurance_Payments']
+                
+                self.ehr_df = df
+                print(f"✓ Loaded {len(self.ehr_df)} combined EHR records")
+            else:
+                # Legacy: Load from Google Sheets directly
+                sheets_loader = GoogleSheetsLoader()
+                
+                if not sheets_loader.open_sheet(sheet_id="1p8goF6Yt_2ymJjFc9f-UdprXxTXmR3WhL2FZs0Xe8nI"):
+                    print("ERROR: Could not open EHR Google Sheet")
+                    return False
+                
+                df = sheets_loader.load_worksheet("All Data")
+                
+                if df is None:
+                    print("ERROR: Could not load EHR worksheet")
+                    return False
+                
+                # Clean the data
+                loader = DataLoader()
+                loader.current_dataframe = df
+                loader.clean_currency_columns()
+                loader.clean_date_columns()
+                
+                self.ehr_df = loader.current_dataframe
+                print(f"✓ Loaded {len(self.ehr_df)} EHR records")
             
             return True
             
