@@ -12,10 +12,14 @@ File patterns handled:
 - qb_pl_income_YYYYMMDD_HHMMSS.csv
 """
 
+import sys
 import os
 import re
 import glob
-from datetime import datetime
+from datetime import datetime, timedelta
+
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 from typing import Dict, List, Tuple
 from collections import defaultdict
 
@@ -38,7 +42,10 @@ FILE_PATTERNS = [
     'deidentification_report_',
     'prompt_only_',
     'unpaid_visits_',
+    'Billing_Master_',
 ]
+
+MAX_AGE_DAYS = 14
 
 
 def get_timestamp_from_filename(filename: str) -> str:
@@ -71,36 +78,51 @@ def group_files_by_prefix(data_dir: str = 'data') -> Dict[str, List[str]]:
 
 def cleanup_old_files(data_dir: str = 'data', dry_run: bool = True) -> Tuple[List[str], List[str]]:
     """
-    Remove old timestamped files, keeping only the most recent of each type.
-    
+    Remove old timestamped files.
+    Rules:
+      - If multiple files of the same type exist, keep only the most recent.
+      - If a single file of a type exists but is older than MAX_AGE_DAYS, delete it.
+
     Args:
         data_dir: Directory containing data files
         dry_run: If True, only report what would be deleted without deleting
-    
+
     Returns:
         Tuple of (files_to_keep, files_to_delete)
     """
     groups = group_files_by_prefix(data_dir)
-    
+    cutoff = datetime.now() - timedelta(days=MAX_AGE_DAYS)
+
     files_to_keep = []
     files_to_delete = []
-    
+
     for prefix, files in groups.items():
-        if len(files) <= 1:
-            files_to_keep.extend(files)
-            continue
-        
-        # Sort by timestamp (newest first)
         files_sorted = sorted(
-            files, 
+            files,
             key=lambda f: get_timestamp_from_filename(os.path.basename(f)),
             reverse=True
         )
-        
-        # Keep the newest, delete the rest
-        files_to_keep.append(files_sorted[0])
-        files_to_delete.extend(files_sorted[1:])
-    
+
+        newest = files_sorted[0]
+        older = files_sorted[1:]
+
+        # Always delete all but the newest duplicate
+        files_to_delete.extend(older)
+
+        # Delete the newest too if it's older than the cutoff
+        ts = get_timestamp_from_filename(os.path.basename(newest))
+        if ts:
+            try:
+                file_date = datetime.strptime(ts, '%Y%m%d_%H%M%S')
+                if file_date < cutoff:
+                    files_to_delete.append(newest)
+                else:
+                    files_to_keep.append(newest)
+            except ValueError:
+                files_to_keep.append(newest)
+        else:
+            files_to_keep.append(newest)
+
     if not dry_run:
         for filepath in files_to_delete:
             try:
@@ -108,7 +130,7 @@ def cleanup_old_files(data_dir: str = 'data', dry_run: bool = True) -> Tuple[Lis
                 print(f"  Deleted: {os.path.basename(filepath)}")
             except Exception as e:
                 print(f"  ERROR deleting {filepath}: {e}")
-    
+
     return files_to_keep, files_to_delete
 
 

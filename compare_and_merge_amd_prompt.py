@@ -14,13 +14,15 @@ OUTPUT:
   - comparison_report_[DATE].md (analysis and red flags)
 """
 
+import io
+import json
 import os
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple, Set
 from datetime import datetime
-import glob
-from data_loader import GoogleSheetsLoader, DataLoader
+from data_loader import DataLoader
+from Google_Drive_Access import GoogleDriveAccessor
 
 
 class AMDPromptComparator:
@@ -30,17 +32,8 @@ class AMDPromptComparator:
     Identifies discrepancies and generates reconciliation reports.
     """
     
-    def __init__(self, prompt_sheet_id: str, amd_csv_path: str = None):
-        """
-        Initialize the comparator.
-        
-        Args:
-            prompt_sheet_id: Google Sheet ID for Prompt "Revenue Report" sheet
-            amd_csv_path: Path to amd_deidentified_[DATE].csv
-                         If None, will search for most recent
-        """
-        self.prompt_sheet_id = prompt_sheet_id
-        self.amd_csv_path = amd_csv_path
+    def __init__(self):
+        """Initialize the comparator."""
         self.prompt_data = None
         self.amd_data = None
         self.matched_records = []
@@ -56,94 +49,103 @@ class AMDPromptComparator:
             'discrepancies': 0
         }
         
-    def find_amd_csv(self) -> str:
-        """
-        Find most recent AMD deidentified CSV if path not provided.
-        
-        Returns:
-            str: Path to most recent CSV, or None if not found
-        """
-        try:
-            amd_csvs = glob.glob("data/amd_deidentified_*.csv")
-            
-            if not amd_csvs:
-                print("ERROR: No AMD deidentified CSV found in data/ folder")
-                print("REQUIRED: Run deidentify_amd_report.py first")
-                return None
-            
-            most_recent = max(amd_csvs, key=os.path.getctime)
-            print(f"✓ Found AMD CSV: {most_recent}")
-            return most_recent
-            
-        except Exception as e:
-            print(f"ERROR finding AMD CSV: {e}")
-            return None
-    
     def load_prompt_data(self) -> bool:
         """
-        Load Prompt EHR "All Data" from Google Sheet.
-        
+        Load Prompt EHR data from Google Drive (Prompt Revenue All Data.csv).
+
         Returns:
             bool: True if loaded successfully
         """
         try:
-            print("\n--- Loading Prompt EHR Data from Google Sheets ---")
-            
-            sheets_loader = GoogleSheetsLoader()
-            
-            if not sheets_loader.open_sheet(sheet_id=self.prompt_sheet_id):
-                print("ERROR: Could not open Prompt Google Sheet")
+            print("\n--- Loading Prompt EHR Data from Google Drive ---")
+
+            drive = GoogleDriveAccessor()
+            drive.authenticate()
+            drive.set_folder(folder_id=GoogleDriveAccessor.DEFAULT_FOLDER_ID)
+
+            files = drive.list_files()
+            prompt_file = next((f for f in files if f['name'] == 'Prompt Revenue All Data.csv'), None)
+
+            if not prompt_file:
+                print("ERROR: Prompt Revenue All Data.csv not found in Drive folder")
                 return False
-            
-            # List worksheets
-            worksheets = sheets_loader.list_worksheets()
-            print(f"Available worksheets: {worksheets}")
-            
-            # Load "All Data" worksheet
-            df = sheets_loader.load_worksheet("All Data")
-            
-            if df is None:
-                print("ERROR: Could not load 'All Data' worksheet")
-                return False
-            
+
+            request = drive.service.files().get_media(fileId=prompt_file['id'])
+            content = request.execute()
+            df = pd.read_csv(io.BytesIO(content))
+
             self.prompt_data = df
             self.stats['prompt_total'] = len(df)
-            
+
             print(f"✓ Loaded Prompt EHR data: {len(df)} records")
             print(f"  Columns: {len(df.columns)}")
-            
+
             return True
-            
+
         except Exception as e:
             print(f"ERROR loading Prompt data: {e}")
             return False
     
     def load_amd_data(self) -> bool:
         """
-        Load AMD deidentified CSV.
-        
+        Load AMD data from Google Drive and map patient names to Prompt IDs
+        using master_patient_list.json.
+
         Returns:
             bool: True if loaded successfully
         """
         try:
-            print("\n--- Loading AMD De-identified Data ---")
-            
-            csv_path = self.amd_csv_path or self.find_amd_csv()
-            
-            if not csv_path or not os.path.exists(csv_path):
-                print(f"ERROR: AMD CSV not found at {csv_path}")
+            print("\n--- Loading AMD Data from Google Drive ---")
+
+            drive = GoogleDriveAccessor()
+            drive.authenticate()
+            drive.set_folder(folder_id=GoogleDriveAccessor.DEFAULT_FOLDER_ID)
+
+            files = drive.list_files()
+            amd_file = next((f for f in files if f['name'] == 'AMD_data.csv'), None)
+
+            if not amd_file:
+                print("ERROR: AMD_data.csv not found in Drive folder")
                 return False
-            
-            print(f"Loading: {csv_path}")
-            
-            self.amd_data = pd.read_csv(csv_path)
-            self.stats['amd_total'] = len(self.amd_data)
-            
-            print(f"✓ Loaded AMD data: {len(self.amd_data)} records")
-            print(f"  Columns: {len(self.amd_data.columns)}")
-            
+
+            content = drive.service.files().get_media(fileId=amd_file['id']).execute()
+            df = pd.read_csv(io.BytesIO(content), encoding='utf-16', sep='\t')
+
+            master_list_path = 'data/master_patient_list.json'
+            if not os.path.exists(master_list_path):
+                print("ERROR: master_patient_list.json not found. Run --qb-reconcile first.")
+                return False
+
+            with open(master_list_path, 'r') as f:
+                master_list = json.load(f)
+
+            def normalize(name):
+                if pd.isna(name) or not str(name).strip():
+                    return ''
+                return str(name).strip().upper()
+
+            patient_ids = []
+            for _, row in df.iterrows():
+                name = normalize(row.get('Patient Name (First Last)', ''))
+                if name in master_list:
+                    patient_ids.append(master_list[name])
+                else:
+                    parts = name.split()
+                    if len(parts) >= 2 and f"{parts[0]} {parts[-1]}" in master_list:
+                        patient_ids.append(master_list[f"{parts[0]} {parts[-1]}"])
+                    else:
+                        patient_ids.append(None)
+
+            df['Patient Account Number'] = patient_ids
+            self.amd_data = df
+            self.stats['amd_total'] = len(df)
+
+            matched = sum(1 for x in patient_ids if x is not None)
+            print(f"✓ Loaded AMD data: {len(df)} records")
+            print(f"  Matched to Prompt IDs: {matched}/{len(df)}")
+
             return True
-            
+
         except Exception as e:
             print(f"ERROR loading AMD data: {e}")
             return False

@@ -8,6 +8,9 @@ import sys
 import os
 from datetime import datetime, timedelta
 
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 
 def parse_args():
     """Parse command line arguments."""
@@ -41,18 +44,6 @@ Examples:
         help='End date (YYYY-MM-DD format)'
     )
     
-    # Data source
-    parser.add_argument(
-        '--sheet-id',
-        default='1p8goF6Yt_2ymJjFc9f-UdprXxTXmR3WhL2FZs0Xe8nI',
-        help='Google Sheet ID for Prompt EHR data'
-    )
-    parser.add_argument(
-        '--worksheet',
-        default='All Data',
-        help='Worksheet name to load (default: All Data)'
-    )
-    
     # Validation
     parser.add_argument(
         '--validate', '-v',
@@ -77,10 +68,6 @@ Examples:
         '--billing-comparison',
         action='store_true',
         help='Run AMD vs Prompt billing comparison (Phase 2)'
-    )
-    parser.add_argument(
-        '--amd-file',
-        help='Path to AMD CSV file for billing comparison'
     )
     
     # QuickBooks reconciliation (Phase 3)
@@ -112,44 +99,36 @@ Examples:
     return parser.parse_args()
 
 
-def load_data(sheet_id: str, worksheet: str, verbose: bool = False):
+def load_data(verbose: bool = False):
     """
-    Load data from Google Sheets.
-    
+    Load Prompt EHR data from Google Drive.
+
     Returns:
         pd.DataFrame or None
     """
-    from data_loader import GoogleSheetsLoader, DataLoader
-    
+    from Google_Drive_Access import GoogleDriveAccessor
+    from data_loader import DataLoader
+
     if verbose:
-        print(f"\nLoading data from Google Sheets...")
-        print(f"  Sheet ID: {sheet_id}")
-        print(f"  Worksheet: {worksheet}")
-    
+        print(f"\nLoading Prompt Revenue All Data.csv from Google Drive...")
+
     try:
-        sheets_loader = GoogleSheetsLoader()
-        
-        if not sheets_loader.open_sheet(sheet_id=sheet_id):
-            print("ERROR: Could not open Google Sheet")
+        drive = GoogleDriveAccessor()
+        if not drive.authenticate():
+            print("ERROR: Could not authenticate with Google Drive")
             return None
-        
-        df = sheets_loader.load_worksheet(worksheet)
-        
-        if df is None:
-            print("ERROR: Could not load worksheet")
-            return None
-        
-        # Clean the data
-        loader = DataLoader()
-        loader.current_dataframe = df
+
+        loader = DataLoader(drive_accessor=drive)
+        df = loader.load_from_drive('Prompt Revenue All Data.csv', folder_id=GoogleDriveAccessor.DEFAULT_FOLDER_ID)
+
         loader.clean_currency_columns()
         loader.clean_date_columns()
-        
+
         if verbose:
             print(f"  Loaded {len(loader.current_dataframe)} records")
-        
+
         return loader.current_dataframe
-        
+
     except Exception as e:
         print(f"ERROR loading data: {e}")
         return None
@@ -272,7 +251,7 @@ def export_results(metrics, reports, export_format: str, output_dir: str, verbos
     return exporter.get_exported_files()
 
 
-def run_billing_comparison(sheet_id: str, amd_file: str = None, verbose: bool = False):
+def run_billing_comparison(verbose: bool = False):
     """Run AMD vs Prompt billing comparison."""
     print("\n" + "=" * 60)
     print("BILLING COMPARISON (AMD vs Prompt)")
@@ -280,26 +259,8 @@ def run_billing_comparison(sheet_id: str, amd_file: str = None, verbose: bool = 
     
     try:
         from compare_and_merge_amd_prompt import AMDPromptComparator
-        
-        # Find AMD file if not specified
-        if not amd_file:
-            data_dir = os.path.join(os.getcwd(), 'data')
-            if os.path.exists(data_dir):
-                amd_files = [f for f in os.listdir(data_dir) if f.startswith('amd_deidentified')]
-                if amd_files:
-                    amd_file = os.path.join(data_dir, sorted(amd_files)[-1])
-                    print(f"Using AMD file: {amd_file}")
-        
-        if not amd_file:
-            print("ERROR: No AMD file specified or found")
-            print("  Use --amd-file to specify the AMD CSV file")
-            return False
-        
-        # Run comparison
-        comparator = AMDPromptComparator(
-            prompt_sheet_id=sheet_id,
-            amd_csv_path=amd_file
-        )
+
+        comparator = AMDPromptComparator()
         
         success = comparator.run_comparison()
         
@@ -356,16 +317,18 @@ def main():
     
     # Handle billing comparison separately
     if args.billing_comparison:
-        success = run_billing_comparison(
-            sheet_id=args.sheet_id,
-            amd_file=args.amd_file,
-            verbose=args.verbose
-        )
+        success = run_billing_comparison(verbose=args.verbose)
+        if success:
+            from data_cleanup import cleanup_old_files
+            cleanup_old_files(dry_run=False)
         sys.exit(0 if success else 1)
-    
+
     # Handle QB reconciliation separately
     if args.qb_reconcile:
         success = run_qb_reconciliation(verbose=args.verbose)
+        if success:
+            from data_cleanup import cleanup_old_files
+            cleanup_old_files(dry_run=False)
         sys.exit(0 if success else 1)
     
     # Handle data cleanup
@@ -375,11 +338,7 @@ def main():
         sys.exit(0)
     
     # Load data
-    df = load_data(
-        sheet_id=args.sheet_id,
-        worksheet=args.worksheet,
-        verbose=args.verbose
-    )
+    df = load_data(verbose=args.verbose)
     
     if df is None:
         print("\nFailed to load data. Exiting.")
@@ -422,15 +381,18 @@ def main():
         # Export if requested
         if args.export:
             exported = export_results(
-                metrics, 
-                reports, 
-                args.export, 
+                metrics,
+                reports,
+                args.export,
                 args.output,
                 verbose=args.verbose
             )
-            
+
             if not args.quiet:
                 print(f"\nExported {len(exported)} files to {args.output}")
+
+        from data_cleanup import cleanup_old_files
+        cleanup_old_files(dry_run=False)
     
     # Default: show executive summary
     if not args.report and not args.validate:

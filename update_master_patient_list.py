@@ -380,15 +380,25 @@ def main():
     """
     Example usage of MasterPatientListUpdater for testing.
     """
+    from Google_Drive_Access import GoogleDriveAccessor
+
     print("="*100)
     print("MASTER PATIENT LIST UPDATER - EXAMPLE")
     print("="*100)
-    
-    # Configuration
-    sheet_id = "176aD8l7ybHqywz0mN737S3SgjYt5obH0DRwUlpBIQgE"  # Your Prompt_Name_ID_DOB sheet
+
+    drive = GoogleDriveAccessor()
+    drive.authenticate()
+    drive.set_folder(folder_id=GoogleDriveAccessor.DEFAULT_FOLDER_ID)
+    files = drive.list_files()
+    sheet_file = next((f for f in files if f['name'] == 'Prompt_Name_ID_DOB'), None)
+
+    if not sheet_file:
+        print("ERROR: Prompt_Name_ID_DOB not found in Drive folder")
+        return
+
+    sheet_id = sheet_file['id']
     local_json_path = "data/master_patient_list.json"
-    
-    # Create updater
+
     updater = MasterPatientListUpdater(
         sheet_id=sheet_id,
         local_json_path=local_json_path

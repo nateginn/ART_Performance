@@ -10,7 +10,6 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 
 from quickbooks_pl_loader import QuickBooksPLLoader
-from data_loader import GoogleSheetsLoader, DataLoader
 from combine_ehr_data import EHRDataCombiner
 
 
@@ -29,14 +28,8 @@ class QBPLReconciliation:
         'Unknown': 'Unknown'
     }
     
-    def __init__(self, use_combined_data: bool = True):
-        """
-        Initialize the reconciliation.
-        
-        Args:
-            use_combined_data: If True, use combined AMD+Prompt data
-        """
-        self.use_combined_data = use_combined_data
+    def __init__(self):
+        """Initialize the reconciliation."""
         self.qb_loader = QuickBooksPLLoader()
         self.ehr_df = None
         self.qb_df = None
@@ -53,46 +46,21 @@ class QBPLReconciliation:
         print("\n--- Loading EHR Revenue Data ---")
         
         try:
-            if self.use_combined_data:
-                # Use combined AMD + Prompt data
-                combiner = EHRDataCombiner()
-                if not combiner.run():
-                    print("ERROR: Could not combine EHR data")
-                    return False
-                
-                # Map combined data to expected format
-                df = combiner.combined_df.copy()
-                df['DOS'] = df['Service_Date']
-                df['Visit Facility'] = df['Visit_Facility']
-                df['Total Paid'] = df['Total_Paid']
-                df['Patient Paid'] = df['Patient_Payments']
-                df['Primary Insurance Paid'] = df['Insurance_Payments']
-                
-                self.ehr_df = df
-                print(f"✓ Loaded {len(self.ehr_df)} combined EHR records")
-            else:
-                # Legacy: Load from Google Sheets directly
-                sheets_loader = GoogleSheetsLoader()
-                
-                if not sheets_loader.open_sheet(sheet_id="1p8goF6Yt_2ymJjFc9f-UdprXxTXmR3WhL2FZs0Xe8nI"):
-                    print("ERROR: Could not open EHR Google Sheet")
-                    return False
-                
-                df = sheets_loader.load_worksheet("All Data")
-                
-                if df is None:
-                    print("ERROR: Could not load EHR worksheet")
-                    return False
-                
-                # Clean the data
-                loader = DataLoader()
-                loader.current_dataframe = df
-                loader.clean_currency_columns()
-                loader.clean_date_columns()
-                
-                self.ehr_df = loader.current_dataframe
-                print(f"✓ Loaded {len(self.ehr_df)} EHR records")
-            
+            combiner = EHRDataCombiner()
+            if not combiner.run():
+                print("ERROR: Could not combine EHR data")
+                return False
+
+            df = combiner.combined_df.copy()
+            df['DOS'] = df['Service_Date']
+            df['Visit Facility'] = df['Visit_Facility']
+            df['Total Paid'] = df['Total_Paid']
+            df['Patient Paid'] = df['Patient_Payments']
+            df['Primary Insurance Paid'] = df['Insurance_Payments']
+
+            self.ehr_df = df
+            print(f"✓ Loaded {len(self.ehr_df)} combined EHR records")
+
             return True
             
         except Exception as e:

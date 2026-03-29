@@ -45,7 +45,7 @@ class EHRDataCombiner:
         try:
             self.drive = GoogleDriveAccessor()
             self.drive.authenticate()
-            self.drive.set_folder(folder_name='ART_Performance_db')
+            self.drive.set_folder(folder_id=GoogleDriveAccessor.DEFAULT_FOLDER_ID)
             return True
         except Exception as e:
             print(f"ERROR authenticating: {e}")
@@ -58,14 +58,14 @@ class EHRDataCombiner:
             files = self.drive.list_files()
             
             for f in files:
-                if f['name'] == 'Prompt_All_data.csv':
+                if f['name'] == 'Prompt Revenue All Data.csv':
                     request = self.drive.service.files().get_media(fileId=f['id'])
                     content = request.execute()
                     self.prompt_df = pd.read_csv(io.BytesIO(content))
                     break
             
             if self.prompt_df is None:
-                print("ERROR: Prompt_All_data.csv not found")
+                print("ERROR: Prompt Revenue All Data.csv not found")
                 return False
             
             # Clean data

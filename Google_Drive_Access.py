@@ -5,11 +5,15 @@ This module handles authentication, folder navigation, and file listing.
 """
 
 import os
+import sys
 import pickle
 import json
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 import googleapiclient.discovery
 from typing import List, Dict, Optional
 import sys
@@ -21,12 +25,15 @@ class GoogleDriveAccessor:
     """
     
     # Google Drive API scope
-    SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+    SCOPES = [
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/spreadsheets.readonly',
+    ]
     TOKEN_FILE = 'token.pickle'
     CREDENTIALS_FILE = 'credentials.json'
     
-    # Default folder ID (user can override)
-    DEFAULT_FOLDER_ID = None
+    # Default folder ID — ART_Performance_db on Google Drive
+    DEFAULT_FOLDER_ID = '1vNdEwppv72BvKEFS8b2Ss4jJit8pxrLZ'
     
     def __init__(self, credentials_file: str = CREDENTIALS_FILE, token_file: str = TOKEN_FILE):
         """

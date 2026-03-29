@@ -19,13 +19,10 @@ class QuickBooksPLLoader:
     Handles the specific format of QB P&L reports with monthly columns.
     """
     
-    # Google Drive folder name
-    DRIVE_FOLDER = "ART_Performance_db"
-    
     # Expected file patterns
     FILE_PATTERNS = {
-        'greeley': 'ART Greeley LLC_Profit and Loss.csv',
-        'denver': 'ART Denver LLC_Profit and Loss.csv'
+        'greeley': 'ART Greeley LLC_Profit and Loss - Monthly.csv',
+        'denver': 'ART Denver LLC_Profit and Loss - Monthly.csv'
     }
     
     # Income categories that represent patient/insurance revenue
@@ -67,8 +64,8 @@ class QuickBooksPLLoader:
             print("ERROR: Failed to authenticate with Google Drive")
             return False
         
-        if not self.drive_accessor.set_folder(folder_name=self.DRIVE_FOLDER):
-            print(f"ERROR: Could not access folder: {self.DRIVE_FOLDER}")
+        if not self.drive_accessor.set_folder(folder_id=GoogleDriveAccessor.DEFAULT_FOLDER_ID):
+            print("ERROR: Could not access Drive folder")
             return False
         
         return True

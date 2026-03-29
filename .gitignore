@@ -52,3 +52,9 @@ master_patient_list.json
 *_sensitive.py
 *.key
 *.secret
+
+# Generated output - changes every run, no value in version control
+data/*.csv
+data/*.md
+data/*.json
+reports/

@@ -18,9 +18,6 @@ class QuickBooksLoader:
     Handles the specific format of QB Deposit Detail reports.
     """
     
-    # Google Drive folder name
-    DRIVE_FOLDER = "ART_Performance_db"
-    
     # Expected file patterns
     FILE_PATTERNS = {
         'greeley': 'ART Greeley LLC_Deposit Detail.csv',
@@ -67,8 +64,8 @@ class QuickBooksLoader:
             print("ERROR: Failed to authenticate with Google Drive")
             return False
         
-        if not self.drive_accessor.set_folder(folder_name=self.DRIVE_FOLDER):
-            print(f"ERROR: Could not access folder: {self.DRIVE_FOLDER}")
+        if not self.drive_accessor.set_folder(folder_id=GoogleDriveAccessor.DEFAULT_FOLDER_ID):
+            print("ERROR: Could not access Drive folder")
             return False
         
         return True
