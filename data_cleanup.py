@@ -43,6 +43,14 @@ FILE_PATTERNS = [
     'prompt_only_',
     'unpaid_visits_',
     'Billing_Master_',
+    'reconciliation_operational_',
+    'reconciliation_needs_attention_',
+    'reconciliation_outstanding_ar_',
+    'reconciliation_needs_posting_',
+    'reconciliation_mismatched_',
+    'reconciliation_report_',
+    'patient_lookup_',
+    'commercial_audit_',
 ]
 
 MAX_AGE_DAYS = 14
@@ -70,7 +78,8 @@ def group_files_by_prefix(data_dir: str = 'data') -> Dict[str, List[str]]:
         
         for prefix in FILE_PATTERNS:
             if filename.startswith(prefix):
-                groups[prefix].append(filepath)
+                ext = os.path.splitext(filename)[1]
+                groups[f"{prefix}{ext}"].append(filepath)
                 break
     
     return groups

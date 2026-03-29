@@ -193,50 +193,63 @@ class QuickBooksPLLoader:
             
             print(f"  Found {len(month_columns)} months: {list(month_columns.values())}")
             
-            # Extract income rows
-            income_data = []
+            # Extract income and expense rows
+            pl_data = []
             in_income_section = False
-            
+            in_expenses_section = False
+
             for idx in range(header_row_idx + 1, len(df)):
                 row = df.iloc[idx]
                 category = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ''
-                
-                # Track income section
+
                 if category == 'Income':
                     in_income_section = True
+                    in_expenses_section = False
                     continue
-                elif category in ['Cost of Goods Sold', 'Expenses', 'Gross Profit']:
+                elif category == 'Expenses':
+                    in_expenses_section = True
                     in_income_section = False
                     continue
-                elif category.startswith('Total for'):
+                elif category in ['Cost of Goods Sold', 'Gross Profit', 'Net Income',
+                                  'Total Expenses', 'Total Income', 'Net Ordinary Income']:
+                    in_income_section = False
+                    in_expenses_section = False
                     continue
-                
-                if not in_income_section:
+                elif category.startswith('Total for') or category.startswith('Total '):
                     continue
-                
-                if not category or category == 'Income':
+
+                if not in_income_section and not in_expenses_section:
                     continue
-                
-                # Extract monthly values for this category
+
+                if not category:
+                    continue
+
+                row_type = 'Income' if in_income_section else 'Expense'
+
                 for col_idx, month in month_columns.items():
                     if col_idx < len(row):
                         amount = self._parse_amount(row.iloc[col_idx])
                         if amount != 0:
-                            is_patient_revenue = category in self.PATIENT_REVENUE_CATEGORIES
-                            income_data.append({
+                            is_patient_revenue = (row_type == 'Income' and
+                                                  category in self.PATIENT_REVENUE_CATEGORIES)
+                            pl_data.append({
                                 'Month': month,
                                 'Category': category,
                                 'Amount': amount,
                                 'Facility': facility,
-                                'Is_Patient_Revenue': is_patient_revenue
+                                'Is_Patient_Revenue': is_patient_revenue,
+                                'Type': row_type,
                             })
-            
-            result_df = pd.DataFrame(income_data)
+
+            result_df = pd.DataFrame(pl_data)
             
             if len(result_df) > 0:
-                print(f"  Extracted {len(result_df)} income entries")
-                print(f"  Total Income: ${result_df['Amount'].sum():,.2f}")
+                income_total = result_df[result_df['Type'] == 'Income']['Amount'].sum()
+                expense_total = result_df[result_df['Type'] == 'Expense']['Amount'].sum()
                 patient_rev = result_df[result_df['Is_Patient_Revenue']]['Amount'].sum()
+                print(f"  Extracted {len(result_df)} entries ({len(result_df[result_df['Type']=='Income'])} income, {len(result_df[result_df['Type']=='Expense'])} expense)")
+                print(f"  Total Income: ${income_total:,.2f}")
+                print(f"  Total Expenses: ${expense_total:,.2f}")
                 print(f"  Patient Revenue: ${patient_rev:,.2f}")
             
             return result_df
@@ -348,6 +361,22 @@ class QuickBooksPLLoader:
         
         return monthly
     
+    def get_monthly_expenses(self) -> pd.DataFrame:
+        """Get monthly expense totals by facility."""
+        if self.combined_df is None or len(self.combined_df) == 0:
+            return pd.DataFrame()
+
+        df = self.combined_df[self.combined_df['Type'] == 'Expense']
+        if df.empty:
+            return pd.DataFrame()
+
+        monthly = df.groupby(['Month', 'Facility'])['Amount'].sum().unstack(fill_value=0)
+        monthly = monthly.reset_index()
+        monthly.columns.name = None
+        facility_cols = [c for c in monthly.columns if c != 'Month']
+        monthly['Total'] = monthly[facility_cols].sum(axis=1)
+        return monthly
+
     def get_revenue_by_category(self, patient_only: bool = True) -> pd.DataFrame:
         """
         Get revenue totals by category.

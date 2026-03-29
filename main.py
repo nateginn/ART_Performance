@@ -76,6 +76,34 @@ Examples:
         action='store_true',
         help='Run EHR vs QuickBooks P&L reconciliation (Phase 3)'
     )
+
+    # Billing reconciliation
+    parser.add_argument(
+        '--reconcile',
+        action='store_true',
+        help='Run Prompt vs AMD billing reconciliation (needs attention, AR, posting, mismatches)'
+    )
+
+    # Patient lookup
+    parser.add_argument(
+        '--patient',
+        metavar='ACCOUNT_NUMBER',
+        help='Look up all records for a specific patient by account number'
+    )
+
+    # Commercial insurance audit
+    parser.add_argument(
+        '--commercial-audit',
+        action='store_true',
+        help='Run commercial insurance audit (Visit Type contains COM)'
+    )
+
+    # Interactive menu
+    parser.add_argument(
+        '--menu',
+        action='store_true',
+        help='Launch interactive report menu'
+    )
     
     # Data cleanup
     parser.add_argument(
@@ -278,6 +306,32 @@ def run_billing_comparison(verbose: bool = False):
         return False
 
 
+def run_reconciliation(verbose: bool = False) -> bool:
+    """Run Prompt vs AMD billing reconciliation."""
+    print("\n" + "=" * 60)
+    print("BILLING RECONCILIATION (Prompt vs AMD)")
+    print("=" * 60)
+
+    try:
+        from billing_reconciliation import BillingReconciliation
+
+        reconciler = BillingReconciliation()
+        success = reconciler.run()
+
+        if success:
+            print("\nBilling reconciliation complete!")
+            print("Check the 'data' folder for output files.")
+
+        return success
+
+    except ImportError:
+        print("ERROR: billing_reconciliation.py not found")
+        return False
+    except Exception as e:
+        print(f"ERROR running billing reconciliation: {e}")
+        return False
+
+
 def run_qb_reconciliation(verbose: bool = False) -> bool:
     """Run QuickBooks P&L vs EHR reconciliation."""
     print("\n" + "=" * 60)
@@ -304,6 +358,118 @@ def run_qb_reconciliation(verbose: bool = False) -> bool:
         return False
 
 
+def run_commercial_audit(verbose: bool = False) -> bool:
+    """Run commercial insurance audit."""
+    print("\n" + "=" * 60)
+    print("COMMERCIAL INSURANCE AUDIT")
+    print("=" * 60)
+
+    try:
+        from commercial_audit import CommercialAudit
+        audit = CommercialAudit()
+        success = audit.run()
+        if success:
+            from data_cleanup import cleanup_old_files
+            cleanup_old_files(dry_run=False)
+        return success
+    except ImportError:
+        print("ERROR: commercial_audit.py not found")
+        return False
+    except Exception as e:
+        print(f"ERROR running commercial audit: {e}")
+        return False
+
+
+def run_patient_lookup_interactive(account_number: str = None) -> bool:
+    """Run patient lookup, prompting for account number if not provided."""
+    from patient_lookup import PatientLookup
+
+    if not account_number:
+        account_number = input("Enter Patient Account Number: ").strip()
+
+    if not account_number:
+        print("No account number entered.")
+        return False
+
+    lookup = PatientLookup(account_number)
+    return lookup.run()
+
+
+def run_menu():
+    """Interactive terminal menu for report selection."""
+    MENU_OPTIONS = [
+        ('1',  'Executive Summary',                  lambda: _menu_run_report('executive')),
+        ('2',  'Provider Report',                    lambda: _menu_run_report('provider')),
+        ('3',  'Insurance Report',                   lambda: _menu_run_report('insurance')),
+        ('4',  'Facility Report',                    lambda: _menu_run_report('facility')),
+        ('5',  'Full Report',                        lambda: _menu_run_report('full')),
+        ('6',  'Billing Comparison (AMD vs Prompt)', run_billing_comparison),
+        ('7',  'QuickBooks Reconciliation',          run_qb_reconciliation),
+        ('8',  'Billing Reconciliation',             run_reconciliation),
+        ('9',  'Patient Lookup',                     run_patient_lookup_interactive),
+        ('10', 'Commercial Insurance Audit',         run_commercial_audit),
+        ('11', 'Data Cleanup',                       lambda: _menu_run_cleanup()),
+    ]
+
+    while True:
+        print()
+        print("=" * 60)
+        print("  ART PERFORMANCE — Report Menu")
+        print("=" * 60)
+        print()
+        for key, label, _ in MENU_OPTIONS:
+            print(f"  {key:>2}.  {label}")
+        print()
+        print("   0.  Exit")
+        print()
+
+        raw = input("Enter number(s), comma-separated, or 'all': ").strip().lower()
+
+        if not raw or raw == '0':
+            print("Exiting menu.")
+            break
+
+        if raw == 'all':
+            selections = [key for key, _, _ in MENU_OPTIONS]
+        else:
+            selections = [s.strip() for s in raw.split(',')]
+
+        option_map = {key: (label, fn) for key, label, fn in MENU_OPTIONS}
+        valid = True
+        for sel in selections:
+            if sel not in option_map:
+                print(f"  Invalid option: '{sel}'. Please enter a number from the menu.")
+                valid = False
+                break
+
+        if not valid:
+            continue
+
+        for sel in selections:
+            label, fn = option_map[sel]
+            print(f"\n--- Running: {label} ---")
+            try:
+                fn()
+            except Exception as e:
+                print(f"ERROR running {label}: {e}")
+
+
+def _menu_run_report(report_type: str) -> None:
+    df = load_data(verbose=False)
+    if df is None:
+        print("Failed to load data.")
+        return
+    metrics, reports = generate_reports(df, report_type)
+    if reports:
+        report_text = reports.get('full') or reports.get('executive') or next(iter(reports.values()), '')
+        print(report_text)
+
+
+def _menu_run_cleanup() -> None:
+    from data_cleanup import cleanup_old_files
+    cleanup_old_files(dry_run=False)
+
+
 def main():
     """Main entry point."""
     args = parse_args()
@@ -315,6 +481,29 @@ def main():
         print(f"#  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("#" * 60)
     
+    # Handle commercial audit
+    if args.commercial_audit:
+        success = run_commercial_audit(verbose=args.verbose)
+        sys.exit(0 if success else 1)
+
+    # Handle interactive menu
+    if args.menu:
+        run_menu()
+        sys.exit(0)
+
+    # Handle patient lookup
+    if args.patient:
+        success = run_patient_lookup_interactive(args.patient)
+        sys.exit(0 if success else 1)
+
+    # Handle billing reconciliation
+    if args.reconcile:
+        success = run_reconciliation(verbose=args.verbose)
+        if success:
+            from data_cleanup import cleanup_old_files
+            cleanup_old_files(dry_run=False)
+        sys.exit(0 if success else 1)
+
     # Handle billing comparison separately
     if args.billing_comparison:
         success = run_billing_comparison(verbose=args.verbose)
