@@ -152,6 +152,13 @@ ART_Performance/
 ├── test_amd_matching.py            # [DONE] Test patient matching
 ├── update_master_patient_list.py   # [DONE] Update patient list
 │
+├── # Phase 3 - Data Analysis & Reporting
+├── db_cache.py                     # [DONE] DuckDB local cache (Drive → art_data.duckdb)
+├── pivot_report.py                 # [DONE] Multi-month pivot table by facility
+├── ask.py                          # [DONE] Plain-English Q&A via Claude API or Ollama
+│
+├── art_data.duckdb                 # Local cache (NOT in git)
+├── art_config.json                 # Local config: Sheet ID, Anthropic key (NOT in git)
 ├── data/                           # Output CSV files
 ├── reports/                        # Generated reports
 └── master_patient_list.json        # PHI reference (NOT in git)
