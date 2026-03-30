@@ -27,7 +27,7 @@ class GoogleDriveAccessor:
     # Google Drive API scope
     SCOPES = [
         'https://www.googleapis.com/auth/drive.readonly',
-        'https://www.googleapis.com/auth/spreadsheets.readonly',
+        'https://www.googleapis.com/auth/spreadsheets',
     ]
     TOKEN_FILE = 'token.pickle'
     CREDENTIALS_FILE = 'credentials.json'

@@ -53,6 +53,9 @@ master_patient_list.json
 *.key
 *.secret
 
+# Local config - machine-specific, not for version control
+art_config.json
+
 # Generated output - changes every run, no value in version control
 data/*.csv
 data/*.md
