@@ -42,17 +42,35 @@ For `Closed` visits, the financial picture is:
 
 ## AMD Data — Facility Filter
 
-AMD billing data covers multiple clinics. Only the following ART locations should be
-included in any report or reconciliation. Filter by `Office Key and Practice Name`:
+AMD billing data covers multiple billing entities. Filter by `Office Key and Practice Name`.
 
-**Include:**
-- `147076 - ACCELERATED REHAB THERAPY OF NORTHERN CO` → ART Greeley
+**Always include:**
+- `147076 - ACCELERATED REHAB THERAPY OF NORTHERN CO` → ART Greeley (ART Norco entity)
 - `161515 - ART GREELEY` → ART Greeley
-- `127384 - ACCELERATED REHAB THERAPY` → ART Denver (confirm)
+- `127384 - ACCELERATED REHAB THERAPY` → ART Denver
 - `161514 - ART DENVER` → ART Denver
 
-**Exclude:**
-- `139591 - CAMPUS CLINICS` → Third-party clinic, not an ART location (585 records as of March 2026)
+**Campus Clinics — conditional include/exclude:**
+- `139591 - CAMPUS CLINICS` is used as a billing entity for TWO distinct patient populations:
+  1. **ART Greeley patients** whose insurance is credentialed under Campus Clinics → **INCLUDE**
+  2. **ART UNC (University) therapy patients** seen by Nate at the university location → **EXCLUDE**
+
+Campus Clinics records are included by default. UNC therapy patients are identified using
+the Practice Fusion Chart Notes Report (SOAP Notes only, all providers at UNC) and stored
+in the `unc_patients` DuckDB table. Any Campus Clinics record whose (patient name, DOS)
+appears in `unc_patients` is excluded from ART reports.
+
+**How it works in code:**
+- `amd_billing` table stores ALL AMD records including Campus Clinics (flagged with `is_campus_clinics = True`)
+- At query time in `commercial_audit_v2.py`, Campus Clinics records matching `unc_patients` are excluded
+- If `unc_patients` is not loaded, all Campus Clinics records are included with a warning
+
+**UNC chart notes export instructions:**
+- Source: Practice Fusion → Reports → Chart Notes Report
+- Filter: SOAP Notes only, all therapy providers (or Nate Ginn specifically), full date range
+- Format: CSV
+- Load with: `python db_cache.py --unc-notes path/to/ChartNotesReport.csv`
+  or via the dashboard Tab 3 uploader
 
 ---
 

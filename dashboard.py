@@ -36,11 +36,20 @@ def load_latest(prefix: str) -> pd.DataFrame | None:
 
 
 def last_updated() -> str:
-    files = glob.glob("data/reconciliation_*.csv")
-    if not files:
-        return "No data found"
-    ts = os.path.getmtime(max(files, key=os.path.getmtime))
-    return datetime.fromtimestamp(ts).strftime("%b %d, %Y  %I:%M %p")
+    try:
+        import db_cache as _dbc
+        con = _dbc.connect()
+        _dbc._ensure_meta(con)
+        row = con.execute(
+            "SELECT loaded_at FROM _cache_meta ORDER BY loaded_at DESC LIMIT 1"
+        ).fetchone()
+        con.close()
+        if row:
+            ts = datetime.fromisoformat(row[0])
+            return ts.strftime("%b %d, %Y  %I:%M %p")
+    except Exception:
+        pass
+    return "No data loaded yet"
 
 
 def clean_currency(df: pd.DataFrame, cols: list) -> pd.DataFrame:
@@ -53,91 +62,35 @@ def clean_currency(df: pd.DataFrame, cols: list) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=3600, show_spinner="Loading Prompt data from Google Drive…")
+@st.cache_data(ttl=3600, show_spinner="Loading Prompt data…")
 def load_prompt_data() -> pd.DataFrame | None:
     try:
-        from Google_Drive_Access import GoogleDriveAccessor
-        drive = GoogleDriveAccessor()
-        drive.authenticate()
-        drive.set_folder(folder_id=GoogleDriveAccessor.DEFAULT_FOLDER_ID)
-        files = drive.list_files()
-        pf = next((f for f in files if f['name'] == 'Prompt Revenue All Data.csv'), None)
-        if not pf:
+        import db_cache as _dbc
+        con = _dbc.connect()
+        tables = {r[0] for r in con.execute(
+            "SELECT table_name FROM information_schema.tables"
+        ).fetchall()}
+        if "prompt_visits" not in tables:
+            con.close()
             return None
-        content = drive.service.files().get_media(fileId=pf['id']).execute()
-        df = pd.read_csv(io.BytesIO(content))
-        df = clean_currency(df, [
-            'Last Billed', 'Primary Allowed', 'Primary Not Allowed',
-            'Patient Paid', 'Primary Insurance Paid', 'Secondary Insurance Paid',
-            'Total Paid', 'Pt. Current Balance'
-        ])
-        df['DOS'] = pd.to_datetime(df['DOS'], errors='coerce')
+        df = con.execute("SELECT * FROM prompt_visits").df()
+        con.close()
+        if "DOS" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["DOS"]):
+            df["DOS"] = pd.to_datetime(df["DOS"], errors="coerce")
         return df
     except Exception as e:
-        st.warning(f"Could not load Prompt data from Drive: {e}")
+        st.warning(f"Could not load Prompt data: {e}")
         return None
 
 
-@st.cache_data(ttl=3600, show_spinner="Loading QuickBooks P&L from Google Drive…")
+@st.cache_data(ttl=3600)
 def load_qb_pl_data():
-    try:
-        from quickbooks_pl_loader import QuickBooksPLLoader
-        loader = QuickBooksPLLoader()
-        if loader.load_pl_reports():
-            return loader.combined_df
-        return None
-    except Exception as e:
-        st.warning(f"Could not load QuickBooks P&L data: {e}")
-        return None
+    return None
 
 
-@st.cache_data(ttl=3600, show_spinner="Loading AMD data from Google Drive…")
+@st.cache_data(ttl=3600)
 def load_amd_data():
-    try:
-        import io, json
-        from Google_Drive_Access import GoogleDriveAccessor
-        drive = GoogleDriveAccessor()
-        drive.authenticate()
-        drive.set_folder(folder_id=GoogleDriveAccessor.DEFAULT_FOLDER_ID)
-        files = drive.list_files()
-        af = next((f for f in files if f['name'] == 'AMD_data.csv'), None)
-        if not af:
-            return None
-        content = drive.service.files().get_media(fileId=af['id']).execute()
-        df = pd.read_csv(io.BytesIO(content), encoding='utf-16', sep='\t')
-
-        for col in ['Insurance Payments', 'Patient Payments', 'Current Balance', 'Charges', 'Adjustments']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(
-                    df[col].astype(str).str.replace(r'[\$,()]', '', regex=True),
-                    errors='coerce'
-                ).fillna(0)
-
-        df['Service Date'] = pd.to_datetime(df.get('Service Date', pd.Series(dtype='object')), errors='coerce')
-        df['DOS_key'] = df['Service Date'].dt.strftime('%Y-%m-%d')
-
-        master_path = 'data/master_patient_list.json'
-        if not os.path.exists(master_path):
-            return None
-        with open(master_path, 'r') as f:
-            master = json.load(f)
-
-        def _map_name(name):
-            if pd.isna(name):
-                return None
-            n = str(name).strip().upper()
-            if n in master:
-                return master[n]
-            parts = n.split()
-            if len(parts) >= 2:
-                alt = f"{parts[0]} {parts[-1]}"
-                return master.get(alt)
-            return None
-
-        df['Patient Account Number'] = df.get('Patient Name (First Last)', pd.Series(dtype='object')).apply(_map_name)
-        return df
-    except Exception as e:
-        return None
+    return None
 
 
 def compute_monthly_collections(prompt_df, amd_df, month_str: str) -> dict:
@@ -219,10 +172,33 @@ with st.sidebar:
     st.title("🏥 ART Performance")
     st.caption("Accelerated Rehab Therapy")
     st.divider()
-    st.caption(f"**Data last updated**")
+    st.caption("**Last data load**")
     st.caption(last_updated())
     st.divider()
-    if st.button("🔄 Refresh Data", use_container_width=True):
+
+    try:
+        import db_cache as _dbc
+        con = _dbc.connect()
+        _dbc._ensure_meta(con)
+        meta_rows = con.execute(
+            "SELECT table_name, loaded_at FROM _cache_meta ORDER BY table_name"
+        ).fetchall()
+        con.close()
+        if meta_rows:
+            st.caption("**Loaded tables**")
+            for tname, loaded_at in meta_rows:
+                try:
+                    ts = datetime.fromisoformat(loaded_at).strftime("%m/%d %I:%M %p")
+                except Exception:
+                    ts = loaded_at[:10] if loaded_at else "?"
+                st.caption(f"• {tname}  {ts}")
+        else:
+            st.caption("No data loaded yet.")
+    except Exception:
+        st.caption("Database not initialized.")
+
+    st.divider()
+    if st.button("🔄 Refresh Display", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
     st.divider()
@@ -232,7 +208,10 @@ with st.sidebar:
 
 # ── Tabs ────────────────────────────────────────────────────────────────────────
 
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "⚠️ AR & Action Items", "🏢 Commercial Insurance", "📅 Monthly Report"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📊 Overview", "⚠️ AR & Action Items",
+    "🏢 Commercial Audit", "📅 Monthly Report", "🚗 Auto/PI Audit"
+])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -243,7 +222,7 @@ with tab1:
     prompt_df = load_prompt_data()
 
     if prompt_df is None:
-        st.error("Prompt data unavailable. Check Google Drive connection.")
+        st.info("Prompt data not loaded yet. Upload your **Prompt Revenue All Data** CSV in the **Commercial Audit** tab.")
     else:
         billing_df = prompt_df[prompt_df['Visit Stage'].isin(BILLING_STAGES)].copy()
         ops_df     = prompt_df[prompt_df['Visit Stage'].isin(OPERATIONAL_STAGES)].copy()
@@ -412,98 +391,224 @@ with tab2:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — COMMERCIAL INSURANCE
+# TAB 3 — COMMERCIAL AUDIT (DuckDB-powered)
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab3:
-    comm = load_latest('commercial_audit_')
+    st.subheader("Commercial Insurance Audit")
+    st.caption(
+        "Covers two periods: AMD billing only (May–Aug 2025) and "
+        "Prompt vs AMD cross-reference (Sep 2025–present)."
+    )
 
-    if comm is None:
-        st.info("No commercial audit data found. Run `python main.py --commercial-audit` first.")
+    # ── Data loaders ─────────────────────────────────────────────────────────
+    st.caption("Upload your source files below. Each only needs to be uploaded when you have new data to load.")
+    col_prompt, col_amd, col_unc = st.columns(3)
+
+    with col_prompt.expander("📋 Load / Refresh Prompt Revenue Data", expanded=False):
+        st.caption(
+            "Export **Prompt Revenue All Data** from Prompt EMR (all visits, full history) "
+            "as CSV and upload here. This is the primary visit and billing record for Sep 2025+."
+        )
+        uploaded_prompt = st.file_uploader(
+            "Prompt Revenue All Data CSV", type=["csv"],
+            key="prompt_upload"
+        )
+        force_prompt = st.checkbox("Force reload", value=False, key="force_prompt")
+        if st.button("Load Prompt into Database", disabled=uploaded_prompt is None):
+            try:
+                import db_cache as _dbc
+                raw = uploaded_prompt.read()
+                with st.spinner("Parsing and loading Prompt visit data…"):
+                    _dbc.load_prompt_visits_file(raw, force=force_prompt)
+                st.success("Prompt data loaded.")
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to load Prompt data: {e}")
+
+    with col_amd.expander("📂 Load / Refresh AMD Billing Data", expanded=False):
+        st.caption(
+            "Export AMD commercial billing (full history, May 2025–today) "
+            "as Excel or CSV and upload here. Only needed when you have new AMD data."
+        )
+        uploaded_amd = st.file_uploader(
+            "AMD Billing Export", type=["csv", "xlsx", "xls", "tsv"],
+            key="amd_upload"
+        )
+        force_amd = st.checkbox("Force reload", value=False, key="force_amd")
+        if st.button("Load AMD into Database", disabled=uploaded_amd is None):
+            try:
+                import db_cache as _dbc
+                raw = uploaded_amd.read()
+                with st.spinner("Parsing and loading AMD billing data…"):
+                    _dbc.load_amd_billing(raw, force=force_amd)
+                st.success("AMD billing data loaded.")
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to load AMD data: {e}")
+
+    with col_unc.expander("🏫 Load / Refresh UNC Chart Notes", expanded=False):
+        st.caption(
+            "Export the Practice Fusion Chart Notes Report (SOAP Notes only) "
+            "for all UNC therapy patients, full date range. This identifies "
+            "which Campus Clinics billing records belong to UNC vs ART Greeley."
+        )
+        uploaded_unc = st.file_uploader(
+            "Practice Fusion Chart Notes CSV", type=["csv"],
+            key="unc_upload"
+        )
+        force_unc = st.checkbox("Force reload", value=False, key="force_unc")
+        if st.button("Load UNC Notes into Database", disabled=uploaded_unc is None):
+            try:
+                import db_cache as _dbc
+                raw = uploaded_unc.read()
+                with st.spinner("Parsing UNC chart notes…"):
+                    _dbc.load_unc_chart_notes(raw, force=force_unc)
+                st.success("UNC chart notes loaded.")
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to load UNC notes: {e}")
+
+    # ── Run audit ─────────────────────────────────────────────────────────────
+    @st.cache_data(ttl=600, show_spinner="Running commercial audit…")
+    def _run_commercial_audit():
+        try:
+            from commercial_audit_v2 import run_audit
+            return run_audit()
+        except SystemExit:
+            return None
+        except Exception as e:
+            return {"error": str(e)}
+
+    result = _run_commercial_audit()
+
+    if result is None:
+        st.warning(
+            "AMD billing data not loaded yet. Upload your AMD export above, "
+            "then this audit will run automatically."
+        )
+    elif "error" in result:
+        st.error(f"Audit error: {result['error']}")
     else:
-        for col in ['Last Billed', 'AMD Insurance Payments', 'AMD Adjustments',
-                    'AMD Patient Payments', 'AMD Current Balance']:
-            comm[col] = pd.to_numeric(comm[col].astype(str).str.replace(r'[\$,()]', '', regex=True),
-                                      errors='coerce').fillna(0)
+        s = result["stats"]
 
-        total_visits  = len(comm)
-        total_charged = comm['Last Billed'].sum()
-        total_ins     = comm['AMD Insurance Payments'].sum()
-        total_pat     = comm['AMD Patient Payments'].sum()
-        total_balance = comm['AMD Current Balance'].sum()
-        matched_count = (comm['AMD Match'] == 'Yes').sum()
-
-        # ── KPI Cards ──────────────────────────────────────────────────────────
-        st.subheader("Commercial Insurance Overview")
+        # ── KPI Cards ─────────────────────────────────────────────────────────
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Commercial Visits",    f"{total_visits:,}")
-        c2.metric("AMD Matched",          f"{matched_count:,} of {total_visits:,}")
-        c3.metric("Total Charges",        fmt_dollar(total_charged))
-        c4.metric("AMD Insurance Paid",   fmt_dollar(total_ins))
-        c5.metric("AMD Balance",          fmt_dollar(total_balance))
+        c1.metric("AMD Total Charges",   fmt_dollar(s["total_amd_charges"]))
+        c2.metric("AMD Insurance Paid",  fmt_dollar(s["total_amd_ins_paid"]))
+        c3.metric("AMD Patient Paid",    fmt_dollar(s["total_amd_pat_paid"]))
+        c4.metric("AMD Open Balance",    fmt_dollar(s["total_amd_balance"]))
+        c5.metric("Prompt Commercial\n(Sep 2025+)", f"{s['prompt_commercial']:,}")
 
         st.divider()
 
-        col_left, col_right = st.columns([2, 1])
+        # ── Period 2 reconciliation ───────────────────────────────────────────
+        st.subheader("Sep 2025+ Reconciliation (Prompt vs AMD)")
+        r1, r2, r3 = st.columns(3)
+        r1.metric("✅ Matched", f"{s['matched']:,}")
+        r2.metric("⚠️ Unbilled (Prompt only)", f"{s['unbilled']:,}",
+                  help="Prompt shows a commercial visit but no AMD billing record found")
+        r3.metric("❓ Ghost Billing (AMD only)", f"{s['ghost']:,}",
+                  help="AMD has a billing record but no matching Prompt visit")
 
-        with col_left:
-            st.subheader("Top Insurers by Charges")
-            ins_grp = comm.groupby('Case Primary Insurance').agg(
-                Charges=('Last Billed', 'sum'),
-                Balance=('AMD Current Balance', 'sum'),
-                Visits=('Last Billed', 'count'),
-            ).sort_values('Charges', ascending=False).head(10).reset_index()
+        st.divider()
 
-            ins_grp['Has Balance'] = ins_grp['Balance'].apply(
-                lambda b: 'Balance Remaining' if b > 0 else 'Fully Resolved'
-            )
-            fig_ins = px.bar(
-                ins_grp, x='Charges', y='Case Primary Insurance',
-                orientation='h',
-                color='Has Balance',
-                color_discrete_map={'Balance Remaining': '#E67E22', 'Fully Resolved': '#27AE60'},
-                text=ins_grp['Visits'].apply(lambda v: f"{v} visits"),
-                labels={'Charges': 'Total Charges ($)', 'Case Primary Insurance': ''},
-            )
-            fig_ins.update_traces(textposition='outside')
-            fig_ins.update_layout(
-                yaxis={'categoryorder': 'total ascending'},
-                legend_title='', margin=dict(t=10, b=10)
-            )
-            st.plotly_chart(fig_ins, use_container_width=True)
+        # ── Charts ────────────────────────────────────────────────────────────
+        detail = result["detail"]
 
-        with col_right:
-            st.subheader("By Facility")
-            fac_grp = comm.groupby('Visit Facility').size().reset_index(name='Visits')
+        col_l, col_r = st.columns([2, 1])
+
+        with col_l:
+            st.subheader("AMD Charges by Insurance")
+            if "Case Primary Insurance" in detail.columns:
+                ins_grp = (
+                    detail.groupby("Case Primary Insurance")
+                    .agg(Charges=("AMD Charges", "sum"),
+                         Balance=("AMD Balance", "sum"),
+                         Visits=("AMD Charges", "count"))
+                    .sort_values("Charges", ascending=False)
+                    .head(12)
+                    .reset_index()
+                )
+                ins_grp["Status"] = ins_grp["Balance"].apply(
+                    lambda b: "Balance Remaining" if b > 0 else "Resolved"
+                )
+                fig_ins = px.bar(
+                    ins_grp, x="Charges", y="Case Primary Insurance",
+                    orientation="h", color="Status",
+                    color_discrete_map={"Balance Remaining": "#E67E22", "Resolved": "#27AE60"},
+                    text=ins_grp["Visits"].apply(lambda v: f"{v}"),
+                    labels={"Charges": "AMD Charges ($)", "Case Primary Insurance": ""},
+                )
+                fig_ins.update_traces(textposition="outside")
+                fig_ins.update_layout(yaxis={"categoryorder": "total ascending"},
+                                      legend_title="", margin=dict(t=10, b=10))
+                st.plotly_chart(fig_ins, use_container_width=True)
+
+        with col_r:
+            st.subheader("Match Status")
+            status_counts = detail["Match Status"].value_counts().reset_index()
+            status_counts.columns = ["Status", "Count"]
+            color_map = {
+                "Both": "#27AE60",
+                "Prompt Only": "#E74C3C",
+                "Amd Only": "#F39C12",
+                "Amd Only (Pre-Prompt)": "#4A90D9",
+            }
             fig_pie = px.pie(
-                fac_grp, names='Visit Facility', values='Visits', hole=0.4,
-                color_discrete_sequence=['#4A90D9', '#27AE60'],
+                status_counts, names="Status", values="Count", hole=0.4,
+                color="Status", color_discrete_map=color_map,
             )
-            fig_pie.update_layout(margin=dict(t=10, b=10), legend_title='')
+            fig_pie.update_layout(margin=dict(t=10, b=10), legend_title="")
             st.plotly_chart(fig_pie, use_container_width=True)
 
         st.divider()
 
-        # ── Visit Stage by Facility ───────────────────────────────────────────
-        st.subheader("Visit Stage by Facility")
-        stage_fac = comm.groupby(['Visit Facility', 'Visit Stage']).agg(
-            Charges=('Last Billed', 'sum')
-        ).reset_index()
-        fig_stacked = px.bar(
-            stage_fac, x='Visit Facility', y='Charges', color='Visit Stage',
-            barmode='stack',
-            color_discrete_map={'Closed': '#27AE60', 'Open': '#4A90D9', 'Review': '#F39C12'},
-            labels={'Charges': 'Total Charges ($)', 'Visit Facility': ''},
-        )
-        fig_stacked.update_layout(legend_title='', margin=dict(t=10, b=10))
-        st.plotly_chart(fig_stacked, use_container_width=True)
+        # ── Action tables ─────────────────────────────────────────────────────
+        st.subheader("Action Items")
+
+        ub = result["unbilled"]
+        if len(ub) > 0:
+            with st.expander(
+                f"⚠️ Unbilled Visits — {len(ub):,} Prompt records with no AMD billing",
+                expanded=True
+            ):
+                show_cols = [c for c in ub.columns if c not in ("Patient Name",)]
+                st.dataframe(ub[show_cols], use_container_width=True, hide_index=True)
+                csv = ub.to_csv(index=False).encode()
+                st.download_button("Download CSV", csv, "commercial_unbilled.csv", "text/csv")
+        else:
+            st.success("No unbilled commercial visits found.")
+
+        ghost = result["ghost"]
+        if len(ghost) > 0:
+            with st.expander(f"❓ Ghost Billing — {len(ghost):,} AMD records with no Prompt visit"):
+                show_cols = [c for c in ghost.columns if c not in ("Patient Name",)]
+                st.dataframe(ghost[show_cols], use_container_width=True, hide_index=True)
+                csv = ghost.to_csv(index=False).encode()
+                st.download_button("Download CSV", csv, "commercial_ghost.csv", "text/csv")
+
+        bal = result["open_balance"]
+        if len(bal) > 0:
+            with st.expander(
+                f"💰 Open Balances — {len(bal):,} records  |  "
+                f"{fmt_dollar(s['open_balance_amt'])} outstanding"
+            ):
+                show_cols = [c for c in bal.columns if c not in ("Patient Name",)]
+                st.dataframe(bal[show_cols], use_container_width=True, hide_index=True)
+                csv = bal.to_csv(index=False).encode()
+                st.download_button("Download CSV", csv, "commercial_open_balance.csv", "text/csv")
 
         st.divider()
-
-        # ── Full Detail Table ─────────────────────────────────────────────────
-        with st.expander(f"📄 Full Commercial Detail — {total_visits:,} visits"):
-            display_cols = [c for c in comm.columns if c != 'Patient Name']
-            st.dataframe(comm[display_cols], use_container_width=True, hide_index=True)
+        with st.expander(f"📄 Full Detail — {len(detail):,} rows (all periods)"):
+            show_cols = [c for c in detail.columns if c not in ("Patient Name",)]
+            st.dataframe(detail[show_cols], use_container_width=True, hide_index=True)
+            csv = detail.to_csv(index=False).encode()
+            st.download_button("Download Full Detail CSV", csv,
+                               "commercial_full_detail.csv", "text/csv")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -729,3 +834,150 @@ with tab4:
                                      hide_index=True)
                 else:
                     st.success(f"No open visits with DOS in {selected_month}.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — AUTO / PI AUDIT
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab5:
+    st.subheader("Auto / Personal Injury Case Audit")
+    st.caption(
+        "Analyses all Prompt EMR auto visits (Sep 2025+). "
+        "Direct lien patients are separated — payment expected at case settlement, not now."
+    )
+
+    col_days, col_run = st.columns([2, 1])
+    unpaid_threshold = col_days.slider(
+        "Flag UNPAID if billed but no payment received after N days",
+        min_value=30, max_value=180, value=60, step=15
+    )
+
+    @st.cache_data(ttl=600, show_spinner="Running auto/PI audit…")
+    def _run_auto_audit(threshold: int):
+        try:
+            from auto_audit import run_audit as _auto_run
+            return _auto_run(unpaid_days=threshold)
+        except SystemExit:
+            return None
+        except Exception as e:
+            return {"error": str(e)}
+
+    auto_result = _run_auto_audit(unpaid_threshold)
+
+    if auto_result is None:
+        st.warning("Prompt visits not loaded. Run `python db_cache.py` first.")
+    elif "error" in auto_result:
+        st.error(f"Audit error: {auto_result['error']}")
+    else:
+        s = auto_result["stats"]
+
+        # ── KPI Cards ─────────────────────────────────────────────────────────
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Total Auto Visits",      f"{s['total_auto']:,}")
+        c2.metric("Direct Lien (excluded)", f"{s['lien_count']:,}")
+        c3.metric("🔴 Unbilled",             f"{s['unbilled_count']:,}")
+        c4.metric("🟠 Unpaid",               f"{s['unpaid_count']:,}",
+                  help=f"Billed but $0 received after {s['unpaid_days']} days")
+        c5.metric("Revenue at Risk",        fmt_dollar(s["unpaid_exposure"]))
+
+        st.divider()
+
+        # ── Charts ────────────────────────────────────────────────────────────
+        all_df = auto_result["all_auto"]
+
+        col_l, col_r = st.columns([2, 1])
+
+        with col_l:
+            st.subheader("Charges & Collections by Payer")
+            if "Case Primary Insurance" in all_df.columns:
+                payer_grp = (
+                    all_df.groupby("Case Primary Insurance")
+                    .agg(Billed=("Last Billed", "sum"), Paid=("Total Paid", "sum"))
+                    .sort_values("Billed", ascending=False)
+                    .head(12)
+                    .reset_index()
+                )
+                payer_melt = payer_grp.melt(
+                    id_vars="Case Primary Insurance",
+                    value_vars=["Billed", "Paid"],
+                    var_name="Metric", value_name="Amount"
+                )
+                fig_payer = px.bar(
+                    payer_melt, x="Case Primary Insurance", y="Amount",
+                    color="Metric", barmode="group",
+                    color_discrete_map={"Billed": "#4A90D9", "Paid": "#27AE60"},
+                    labels={"Amount": "$", "Case Primary Insurance": ""},
+                )
+                fig_payer.update_layout(
+                    xaxis_tickangle=-35, legend_title="", margin=dict(t=10, b=80)
+                )
+                st.plotly_chart(fig_payer, use_container_width=True)
+
+        with col_r:
+            st.subheader("Flag Breakdown")
+            flag_counts = all_df["Flag"].value_counts().reset_index()
+            flag_counts.columns = ["Flag", "Count"]
+            color_map_flags = {
+                "OK":       "#27AE60",
+                "UNBILLED": "#E74C3C",
+                "UNPAID":   "#E67E22",
+                "LOW_PAY":  "#F39C12",
+            }
+            fig_flags = px.pie(
+                flag_counts, names="Flag", values="Count", hole=0.4,
+                color="Flag", color_discrete_map=color_map_flags,
+            )
+            fig_flags.update_layout(margin=dict(t=10, b=10), legend_title="")
+            st.plotly_chart(fig_flags, use_container_width=True)
+
+        st.divider()
+
+        # ── Action tables ─────────────────────────────────────────────────────
+        st.subheader("Action Items")
+
+        ub = auto_result["unbilled"]
+        if len(ub) > 0:
+            drop = ["DOS_dt", "is_lien"]
+            ub_show = ub.drop(columns=[c for c in drop if c in ub.columns])
+            with st.expander(
+                f"🔴 Unbilled — {len(ub):,} visits with no charge submitted",
+                expanded=True
+            ):
+                show_cols = [c for c in ub_show.columns if c not in ("Patient",)]
+                st.dataframe(ub_show[show_cols], use_container_width=True, hide_index=True)
+                csv = ub_show.to_csv(index=False).encode()
+                st.download_button("Download CSV", csv, "auto_unbilled.csv", "text/csv")
+        else:
+            st.success("No unbilled auto visits found.")
+
+        un = auto_result["unpaid"]
+        if len(un) > 0:
+            drop = ["DOS_dt", "is_lien"]
+            un_show = un.drop(columns=[c for c in drop if c in un.columns])
+            with st.expander(
+                f"🟠 Unpaid — {len(un):,} visits billed but $0 received  |  "
+                f"{fmt_dollar(s['unpaid_exposure'])} at risk"
+            ):
+                show_cols = [c for c in un_show.columns if c not in ("Patient",)]
+                st.dataframe(un_show[show_cols], use_container_width=True, hide_index=True)
+                csv = un_show.to_csv(index=False).encode()
+                st.download_button("Download CSV", csv, "auto_unpaid.csv", "text/csv")
+
+        lien = auto_result["lien"]
+        if len(lien) > 0:
+            with st.expander(f"⚖️ Direct Lien Patients — {len(lien):,} visits (payment pending case settlement)"):
+                show_cols = [c for c in lien.columns if c not in ("Patient", "is_lien")]
+                st.dataframe(lien[show_cols], use_container_width=True, hide_index=True)
+                csv = lien.to_csv(index=False).encode()
+                st.download_button("Download CSV", csv, "auto_lien.csv", "text/csv")
+
+        st.divider()
+        with st.expander(f"📄 Full Auto/PI Detail — {len(all_df):,} non-lien visits"):
+            drop = ["DOS_dt", "is_lien"]
+            all_show = all_df.drop(columns=[c for c in drop if c in all_df.columns])
+            show_cols = [c for c in all_show.columns if c not in ("Patient",)]
+            st.dataframe(all_show[show_cols], use_container_width=True, hide_index=True)
+            csv = all_show.to_csv(index=False).encode()
+            st.download_button("Download Full Detail CSV", csv,
+                               "auto_full_detail.csv", "text/csv")
