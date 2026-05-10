@@ -3,18 +3,11 @@ import sys
 import pandas as pd
 import db_cache
 
-CHECKED_IN = ("Open", "Closed", "Review")
 LABEL_COL = "Profit and Loss - Monthly"
 
 MONTH_ORDER = [
     "September 2025", "October 2025", "November 2025", "December 2025",
     "January 2026", "February 2026", "March 2026",
-]
-
-PL_LINES = [
-    "Total for Income",
-    "Total for Expenses",
-    "Net Income",
 ]
 
 
@@ -161,8 +154,10 @@ def _combined_section(greeley_rows, denver_rows, months):
 
 def main():
     con = db_cache.connect()
-    tables = {r[0] for r in con.execute("SELECT table_name FROM _cache_meta").fetchall()}
-    con.close()
+    try:
+        tables = {r[0] for r in con.execute("SELECT table_name FROM _cache_meta").fetchall()}
+    finally:
+        con.close()
 
     missing = {"prompt_visits", "greeley_pl", "denver_pl"} - tables
     if missing:
