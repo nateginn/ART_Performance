@@ -55,6 +55,11 @@ master_patient_list.json
 
 # Local config - machine-specific, not for version control
 art_config.json
+.env
+
+# Prompt EMR session + downloaded reports (may contain PHI)
+data/prompt_emr_session.json
+data/emr_downloads/
 
 # Generated output - changes every run, no value in version control
 data/*.csv

@@ -84,6 +84,33 @@ Facility filter: exclude `139591 - CAMPUS CLINICS` (per BUSINESS_RULES.md).
 
 **Google Drive / Sheets:** `Google_Drive_Access.py` and `send_unbilled_report.py` still use Drive/Sheets for the unbilled email report workflow. This is separate from the billing audit data pipeline. If auth errors occur on those scripts, delete `token.pickle` and re-authenticate.
 
+### Phase 5 — Automated Data Ingestion (In Progress, session 2026-07-08)
+
+**Prompt EMR automated download — WORKING ✓**
+- `prompt_report_downloader.py` — Playwright browser automation, fully self-contained in this project (vendored from the Case Manager agent project; no dependency on it). Logs into `go.promptemr.com`, opens Reports → Downloads tab, generates the "Visits Revenue Report" xlsx, downloads it, optionally loads it into DuckDB.
+- The xlsx "All Data" sheet columns match the `prompt_visits` schema 1:1 — this report IS the manual "Prompt Revenue All Data" export.
+- **Refresh command (replaces manual export + dashboard upload):** `venv\Scripts\python prompt_report_downloader.py --all-time --load`
+- Other modes: `--start YYYY-MM-DD --end YYYY-MM-DD` (drives the calendar picker), `--headed` (show browser).
+- Credentials in `.env` (`PROMPT_EMR_USERNAME` / `PROMPT_EMR_PASSWORD` / `PROMPT_EMR_BASE_URL`), gitignored. Session cached at `data/prompt_emr_session.json` — runs headless while valid; on expiry it auto-opens a visible browser window (Nate may need to click "Verify you are human", then LOG IN).
+- Quirk handled: the xlsx stores dates as datetimes but `db_cache.load_prompt_visits_file` parses `%m/%d/%Y` strings; the loader reformats date columns before handing off. Do not bypass this or every DOS silently becomes NULL.
+- Downloads land in `data/emr_downloads/` (gitignored — contains patient names).
+- `prompt_visits` last refreshed 2026-07-08: 4,521 rows, Sept 2025–Aug 2026.
+
+**QuickBooks Online via claude.ai MCP connector — VERIFIED, code fix pending**
+- The Intuit QuickBooks connector (claude.ai Settings → Connectors) works from Claude Code. It authenticates ONE QBO company at a time — currently **ART Denver LLC**. Switching to Greeley requires Nate to reauthorize the connector manually. Always call `company_info` first and report which entity is connected.
+- Pulled 18 months of Denver P&L (Jan 2025–Jun 2026). Confirmed bugs in `quickbooks_pl_loader.py`, **not yet fixed** (waiting on Greeley data before finalizing the category lists):
+  - `PATIENT_REVENUE_CATEGORIES` has `'Medport'` but the real QB account is `'MEDPORT'` — case-sensitive match silently miscategorizes $4,413
+  - Missing from the list entirely: `MOVEDOCS` ($8,605/18mo), `Manning Herington` ($5,967), `SELF PAY` ($595)
+  - `ART Greeley transfer` (negative intercompany line) needs an explicit named exclusion
+  - Six listed categories never appear in Denver data (likely Greeley-only, unconfirmed): Commercial Insurance Payments, Direct Lien, Patient Payment, PROVE, Work Comp Payments, Zobell Law
+- Large P&L pulls (more than a few months) exceed inline tool-result limits; the response is written to a temp file — parse the JSON from that file path (`monthlyBreakdown` keyed by date range; skip `Total for *` and bare section keys like `Income` to avoid double-counting).
+- Denver context: closed visits are ~99% four fixed-rate payers (Marrick Medical, HSS, Medport/Movedocs, Trio Solutions) paying ~38–40% of billed — good test bed for billed-vs-collected validation.
+
+**Open items from the 2026-07-08 session:**
+1. Greeley QB P&L pull (after Nate switches the connector), then propose corrected category lists as a diff to `quickbooks_pl_loader.py`
+2. Propose ROADMAP.md updates (Phase 4.1 rewrite → MCP connector; Prompt downloader as a new phase item) — show as diffs for approval, don't edit unprompted
+3. Nothing from this session is committed yet — Prompt EMR work and QuickBooks work should land as separate commits (`git status` shows the new/modified files)
+
 ---
 
 ## PHI Rules — Non-Negotiable
@@ -108,13 +135,13 @@ Facility filter: exclude `139591 - CAMPUS CLINICS` (per BUSINESS_RULES.md).
 ---
 
 ## Immediate Next Steps
-1. **Launch dashboard** — `streamlit run dashboard.py` (runs on port 8501). Venv confirmed working; streamlit and all deps installed. Launch command: `cd C:\Users\growy\Dev_projects\ART_Performance && venv\Scripts\activate && streamlit run dashboard.py`
-2. **Load Prompt data** — export "Prompt Revenue All Data" from Prompt EMR as CSV → upload in Tab 3 "Prompt Revenue" uploader
-3. **Load AMD billing** — export full AMD commercial billing history as CSV or XLSX → upload in Tab 3 "AMD Billing" uploader
-4. **Load UNC chart notes** — export Practice Fusion Chart Notes Report (SOAP Notes, all dates) → upload in Tab 3 "UNC Chart Notes" uploader. Required to correctly exclude UNC therapy patients from Campus Clinics billing.
-5. **Review audit results** — Tab 3 shows commercial reconciliation automatically once data is loaded. Tab 5 shows auto/PI flags.
-6. **QuickBooks P&L** (Phase 5) — QB P&L uploaders are built into `db_cache.py` (`load_pl_file`) but not yet wired into the dashboard. Add Tab 4 uploaders when ready.
-7. **QuickBooks Online API integration** (Phase 5) — replace manual QB P&L CSV exports with live API pulls into DuckDB.
+1. **Commit the 2026-07-08 session work** — Prompt EMR downloader and QuickBooks findings as separate commits
+2. **Refresh Prompt data** — `venv\Scripts\python prompt_report_downloader.py --all-time --load` (no more manual export/upload; Tab 3 uploader remains as fallback)
+3. **Greeley QuickBooks pull** — Nate switches the connector to ART Greeley LLC, then pull 18mo P&L, diff categories, and propose the `quickbooks_pl_loader.py` fix (Medport/MEDPORT case bug + missing categories, see Phase 5 notes)
+4. **Load AMD billing** — export full AMD commercial billing history as CSV or XLSX → upload in Tab 3 "AMD Billing" uploader (still manual; AMD has no automated path yet)
+5. **Load UNC chart notes** — export Practice Fusion Chart Notes Report (SOAP Notes, all dates) → upload in Tab 3 "UNC Chart Notes" uploader. Required to correctly exclude UNC therapy patients from Campus Clinics billing.
+6. **Review audit results** — launch dashboard (`venv\Scripts\activate && streamlit run dashboard.py`, port 8501). Tab 3 shows commercial reconciliation once all data is loaded; Tab 5 auto/PI flags already reflect the refreshed prompt_visits.
+7. **QuickBooks P&L into DuckDB** (Phase 5) — design the MCP-connector loader that outputs the same shape `greeley_pl`/`denver_pl` expect (Month, Category, Amount, Facility, Is_Patient_Revenue, Type)
 8. **Upgrade Anthropic API tier** — upgrade at console.anthropic.com, then change `MODEL` in `ask.py` to `"claude-sonnet-4-6"`.
 
 ---
@@ -151,6 +178,8 @@ ART_Performance/
 ├── auto_audit.py                     ← auto/PI audit with lien exclusion
 ├── pivot_report.py                   ← multi-month pivot table (Greeley / Denver / Combined)
 ├── ask.py                            ← plain-English Q&A via Claude API or Ollama
+├── prompt_report_downloader.py       ← Playwright: auto-download Prompt Visits Revenue Report → DuckDB
+├── .env                              ← Prompt EMR credentials, gitignored
 ├── README.md
 ├── CLAUDE.md                         ← this file
 ├── requirements.txt
@@ -164,7 +193,7 @@ ART_Performance/
 ## DuckDB Tables
 | Table | Source | Populated by |
 |---|---|---|
-| `prompt_visits` | Prompt EMR Google Drive CSV | `python db_cache.py` |
+| `prompt_visits` | Prompt EMR Visits Revenue Report (auto-download) | `python prompt_report_downloader.py --all-time --load` (or dashboard Tab 3 upload) |
 | `greeley_pl` | QuickBooks P&L Drive CSV | `python db_cache.py` |
 | `denver_pl` | QuickBooks P&L Drive CSV | `python db_cache.py` |
 | `amd_billing` | AMD commercial billing export (local file) | `python db_cache.py --amd-billing FILE` or dashboard upload |

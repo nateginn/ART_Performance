@@ -12,3 +12,5 @@ plotly
 duckdb
 anthropic
 openai
+playwright
+python-dotenv
