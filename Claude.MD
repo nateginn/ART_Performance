@@ -107,9 +107,21 @@ Facility filter: exclude `139591 - CAMPUS CLINICS` (per BUSINESS_RULES.md).
 - Denver context: closed visits are ~99% four fixed-rate payers (Marrick Medical, HSS, Medport/Movedocs, Trio Solutions) paying ~38–40% of billed — good test bed for billed-vs-collected validation.
 
 **Open items from the 2026-07-08 session:**
-1. Greeley QB P&L pull (after Nate switches the connector), then propose corrected category lists as a diff to `quickbooks_pl_loader.py`
-2. Propose ROADMAP.md updates (Phase 4.1 rewrite → MCP connector; Prompt downloader as a new phase item) — show as diffs for approval, don't edit unprompted
-3. Nothing from this session is committed yet — Prompt EMR work and QuickBooks work should land as separate commits (`git status` shows the new/modified files)
+1. Greeley QB P&L pull (after Nate switches the connector), then finalize `quickbooks_pl_loader.py` category lists (Medport/MEDPORT case bug FIXED 2026-07-09 with case-insensitive matching + missing categories added; Greeley-only categories still unconfirmed)
+
+### Phase 6 — Weekly Report Pipeline & Direct Lien Tracking (sessions 2026-07-09/10) — Complete ✓
+
+**Two-era billing model documented** — see BUSINESS_RULES.md "The Two-Era Billing Model" (top of file). Key operational consequence: commercial visits in Prompt always show billed-with-$0-paid (payments live in AMD); self-pay collects at time of service. Reports must never flag either as "unpaid".
+
+**New scripts:**
+- `weekly_schedule_cpt_report.py` — the fully-automated weekly report. `--auto --start YYYY-MM-DD --end YYYY-MM-DD [--facility "ART Denver"]` downloads Operations Report + Individual Charges + Revenue Report from Prompt and merges them by Prompt Claim Number: scheduled visits by provider/status, CPT codes + units per checked-in visit, payment status per claim. Same-day multi-provider visits linked by anonymous Encounter # (no patient identifiers in output). Sections: Needs Follow-Up (auto/WC lien-company claims billed with $0 posted — the action list for billing), Direct Lien Pending Settlement, Commercial Billed-via-AMD, Self-Pay (all informational). Payment status rule: Balance=$0 means closed (contracted/lien rates pay ~40% of billed — that's full payment, not partial).
+- `direct_lien_monthly_report.py` — monthly reminder of attorney-held (direct) lien exposure from `prompt_visits`. Groups per patient account + case, itemizes services, per-patient combined total, facility subtotals + grand total. Balance = Last Billed − Total Paid (Prompt keeps Pt. Current Balance at $0 for liens). **Email OFF by default; `--send` required** (reuses send_unbilled_report Gmail). Current exposure ~$143K (Greeley ~$132K / Denver ~$11K).
+- `data_inventory.py` — per-table DuckDB freshness report with verdicts against the era model. Run when wondering "is the data current?"
+- Dashboard Tab 5: Direct Lien Balance KPI tile w/ facility split; sidebar staleness warnings (prompt_visits >7d, amd_billing >35d).
+- Lien detection: `auto_audit._is_lien()` keyword match (LIEN/LAW/ATTORNEY/LEGAL/COUNSEL) on Case Primary Insurance — reuse it, don't reinvent.
+- Removed dead code: `qb_reconciliation.py`, `quickbooks_loader.py` (superseded), `cascade_task.md` (empty).
+- `.env` gotcha fixed: the file had a UTF-8 BOM that broke credential parsing (first key read as `﻿PROMPT_EMR_USERNAME`). If Prompt login mysteriously fails with "credentials not set", check for BOM.
+- Pending decisions for notification triggers (planned, not built): follow-up alert on every run + monthly lien email; recipients/Chat-webhook/dedup design TBD with Nate.
 
 ---
 
@@ -124,7 +136,7 @@ Facility filter: exclude `139591 - CAMPUS CLINICS` (per BUSINESS_RULES.md).
 ## Architecture Constraints
 - Single user (Nate), local machine (Windows 11, RTX 4090, Python 3.13 global)
 - Venv at `venv/` — always activate before running scripts
-- **Data ingestion via file upload** — source files (Prompt, AMD, UNC chart notes) are exported manually from each system and uploaded through the Streamlit dashboard. No Google Drive dependency for normal operation.
+- **Data ingestion** — Prompt EMR data is fully automated (`prompt_report_downloader.py`, Playwright). AMD and UNC chart notes remain manual exports uploaded via the Streamlit dashboard or `db_cache.py` flags. No Google Drive dependency for normal operation.
 - **DuckDB local cache** (`art_data.duckdb`, gitignored) — all analysis scripts query this. Persists across sessions.
 - Anthropic API key stored in `art_config.json` under `"anthropic_api_key"` (gitignored)
 - Ollama available locally for LLM queries without API cost (`glm-4.7-flash:latest`, 19GB) — use `python ask.py --ollama`
@@ -135,14 +147,12 @@ Facility filter: exclude `139591 - CAMPUS CLINICS` (per BUSINESS_RULES.md).
 ---
 
 ## Immediate Next Steps
-1. **Commit the 2026-07-08 session work** — Prompt EMR downloader and QuickBooks findings as separate commits
-2. **Refresh Prompt data** — `venv\Scripts\python prompt_report_downloader.py --all-time --load` (no more manual export/upload; Tab 3 uploader remains as fallback)
-3. **Greeley QuickBooks pull** — Nate switches the connector to ART Greeley LLC, then pull 18mo P&L, diff categories, and propose the `quickbooks_pl_loader.py` fix (Medport/MEDPORT case bug + missing categories, see Phase 5 notes)
-4. **Load AMD billing** — export full AMD commercial billing history as CSV or XLSX → upload in Tab 3 "AMD Billing" uploader (still manual; AMD has no automated path yet)
-5. **Load UNC chart notes** — export Practice Fusion Chart Notes Report (SOAP Notes, all dates) → upload in Tab 3 "UNC Chart Notes" uploader. Required to correctly exclude UNC therapy patients from Campus Clinics billing.
-6. **Review audit results** — launch dashboard (`venv\Scripts\activate && streamlit run dashboard.py`, port 8501). Tab 3 shows commercial reconciliation once all data is loaded; Tab 5 auto/PI flags already reflect the refreshed prompt_visits.
-7. **QuickBooks P&L into DuckDB** (Phase 5) — design the MCP-connector loader that outputs the same shape `greeley_pl`/`denver_pl` expect (Month, Category, Amount, Facility, Is_Patient_Revenue, Type)
-8. **Upgrade Anthropic API tier** — upgrade at console.anthropic.com, then change `MODEL` in `ask.py` to `"claude-sonnet-4-6"`.
+1. **Fresh AMD export (Nate)** — amd_billing is stale (loaded 2026-05-06, service dates through 2026-04-22). Export full history from AMD → dashboard Tab 3 or `python db_cache.py --amd-billing FILE`. This is the payment truth for all commercial + all May–Aug 2025 billing.
+2. **Notification triggers** — decide recipients (same as send_unbilled_report?), Chat webhook availability, and dedup design; then build the per-run follow-up alert and monthly lien email (both currently manual/dry-run only).
+3. **Greeley QuickBooks pull** — Nate switches the connector to ART Greeley LLC, then pull 18mo P&L, confirm Greeley-only categories in `quickbooks_pl_loader.py`
+4. **Practice Fusion Era-1 data** — Nate investigating whether PF can export May–Aug 2025 visit-level schedule data
+5. **QuickBooks P&L into DuckDB** — design the MCP-connector loader that outputs the shape pivot_report expects (Month, Category, Amount, Facility, Is_Patient_Revenue, Type); current greeley_pl/denver_pl tables are raw unparsed CSV dumps (see data_inventory.py)
+6. **Upgrade Anthropic API tier** — upgrade at console.anthropic.com, then change `MODEL` in `ask.py` to `"claude-sonnet-4-6"`.
 
 ---
 
@@ -178,8 +188,11 @@ ART_Performance/
 ├── auto_audit.py                     ← auto/PI audit with lien exclusion
 ├── pivot_report.py                   ← multi-month pivot table (Greeley / Denver / Combined)
 ├── ask.py                            ← plain-English Q&A via Claude API or Ollama
-├── prompt_report_downloader.py       ← Playwright: auto-download Prompt Visits Revenue Report → DuckDB
-├── .env                              ← Prompt EMR credentials, gitignored
+├── prompt_report_downloader.py       ← Playwright: auto-download Prompt reports (revenue/operations/charges) → DuckDB
+├── weekly_schedule_cpt_report.py     ← weekly schedule + CPT/units + payment report (--auto = zero manual steps)
+├── direct_lien_monthly_report.py     ← monthly direct-lien balance reminder (--send gated, dry-run default)
+├── data_inventory.py                 ← per-table DuckDB freshness report
+├── .env                              ← Prompt EMR credentials, gitignored (UTF-8, NO BOM)
 ├── README.md
 ├── CLAUDE.md                         ← this file
 ├── requirements.txt
