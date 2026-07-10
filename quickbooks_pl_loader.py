@@ -25,18 +25,23 @@ class QuickBooksPLLoader:
         'denver': 'ART Denver LLC_Profit and Loss - Monthly.csv'
     }
     
-    # Income categories that represent patient/insurance revenue
+    # Income categories that represent patient/insurance revenue.
+    # Matched case-insensitively since QB category casing is inconsistent
+    # across exports (e.g. 'Medport' vs the real account name 'MEDPORT').
     PATIENT_REVENUE_CATEGORIES = [
         'Services',
         'Cardigan Health',
         'Commercial Insurance Payments',
         'Direct Lien',
         'HSS',
+        'Manning Herington',
         'Marrick Medical',
         'MEDPAY',
         'Medport',
+        'Movedocs',
         'Patient Payment',
         'PROVE',
+        'SELF PAY',
         'TRIO',
         'Work Comp Payments',
         'Zobell Law'
@@ -57,6 +62,7 @@ class QuickBooksPLLoader:
         self.denver_df = None
         self.combined_df = None
         self.stats = {}
+        self._patient_revenue_categories_upper = {c.upper() for c in self.PATIENT_REVENUE_CATEGORIES}
         
     def authenticate(self) -> bool:
         """Authenticate with Google Drive."""
@@ -231,7 +237,7 @@ class QuickBooksPLLoader:
                         amount = self._parse_amount(row.iloc[col_idx])
                         if amount != 0:
                             is_patient_revenue = (row_type == 'Income' and
-                                                  category in self.PATIENT_REVENUE_CATEGORIES)
+                                                  category.upper() in self._patient_revenue_categories_upper)
                             pl_data.append({
                                 'Month': month,
                                 'Category': category,
