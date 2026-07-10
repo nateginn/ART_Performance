@@ -113,7 +113,22 @@ def _num(val) -> float:
     return 0.0 if pd.isna(val) else float(val)
 
 
+def _billing_channel(visit_type) -> str:
+    vt = str(visit_type or "").upper()
+    if "COM" in vt:
+        return "commercial"
+    if "SELF PAY" in vt:
+        return "self_pay"
+    return "prompt"
+
+
 def _payment_status(row) -> str:
+    channel = _billing_channel(row.get("Type"))
+    if channel == "commercial":
+        return "Billed via AMD — payment tracked in AMD"
+    if channel == "self_pay":
+        return "Self-pay — collected at time of service"
+
     billed = _num(row.get("Last Billed"))
     paid = _num(row.get("Total Paid"))
     balance = _num(row.get("Pt. Current Balance"))
@@ -181,6 +196,11 @@ def build_report(merged: pd.DataFrame, charges: pd.DataFrame) -> dict:
     follow_up_rows = _rows(needs_follow_up[~needs_follow_up["Is Direct Lien"]])
     lien_pending_rows = _rows(needs_follow_up[needs_follow_up["Is Direct Lien"]])
 
+    checked_in_all = merged[merged["Status Bucket"] == "Checked-In"]
+    channels = checked_in_all["Type"].apply(_billing_channel)
+    commercial_rows = _rows(checked_in_all[channels == "commercial"])
+    self_pay_rows = _rows(checked_in_all[channels == "self_pay"])
+
     provider_sections = []
     for provider in providers:
         visits = merged[merged["Provider"] == provider]
@@ -217,6 +237,8 @@ def build_report(merged: pd.DataFrame, charges: pd.DataFrame) -> dict:
         "providers": provider_sections,
         "follow_up_rows": follow_up_rows,
         "lien_pending_rows": lien_pending_rows,
+        "commercial_rows": commercial_rows,
+        "self_pay_rows": self_pay_rows,
         "total_scheduled": len(merged),
         "status_totals": merged["Status Bucket"].value_counts().to_dict(),
         "facilities": sorted(merged["Visit Facility"].dropna().unique()),
@@ -229,6 +251,21 @@ def _fmt_money(val) -> str:
     if val is None or pd.isna(val):
         return "-"
     return f"${float(val):,.2f}"
+
+
+def _amd_as_of() -> str | None:
+    try:
+        import db_cache
+        con = db_cache.connect()
+        row = con.execute(
+            "SELECT loaded_at FROM _cache_meta WHERE table_name = 'amd_billing'"
+        ).fetchone()
+        con.close()
+        if row and row[0]:
+            return str(row[0])[:10]
+    except Exception:
+        pass
+    return None
 
 
 def _build_summary(result: dict, start: str, end: str, facility: str | None = None) -> str:
@@ -278,6 +315,16 @@ def _build_summary(result: dict, start: str, end: str, facility: str | None = No
     else:
         lines.append("_None this period._")
 
+    def _claim_table(rows):
+        out = ["| DOS | Provider | Claim # | Visit Type | Primary Insurance | CPT | Billed |",
+                "|---|---|---|---|---|---|---|"]
+        for r in rows:
+            out.append(
+                f"| {r['DOS']} | {r['Provider']} | {r['Claim Number']} | {r['Visit Type']} | "
+                f"{r['Primary Insurance']} | {r['CPT']} | {_fmt_money(r['Billed'])} |"
+            )
+        return out
+
     lp = result["lien_pending_rows"]
     lines += [
         "",
@@ -287,16 +334,29 @@ def _build_summary(result: dict, start: str, end: str, facility: str | None = No
         "No action needed from billing; listed for visibility only.",
         "",
     ]
-    if lp:
-        lines += ["| DOS | Provider | Claim # | Visit Type | Primary Insurance | CPT | Billed |",
-                   "|---|---|---|---|---|---|---|"]
-        for r in lp:
-            lines.append(
-                f"| {r['DOS']} | {r['Provider']} | {r['Claim Number']} | {r['Visit Type']} | "
-                f"{r['Primary Insurance']} | {r['CPT']} | {_fmt_money(r['Billed'])} |"
-            )
-    else:
-        lines.append("_None this period._")
+    lines += _claim_table(lp) if lp else ["_None this period._"]
+
+    cm = result["commercial_rows"]
+    amd_note = f" AMD data as-of {result['amd_as_of']}." if result.get("amd_as_of") else ""
+    lines += [
+        "",
+        f"## Commercial — Billed via AMD ({len(cm)} claim(s), informational only)",
+        "Commercial charges are entered in Prompt but claims are submitted and payments "
+        f"posted in AMD, so Prompt never shows a payment here. Payment status for these "
+        f"lives in the commercial audit (AMD data).{amd_note}",
+        "",
+    ]
+    lines += _claim_table(cm) if cm else ["_None this period._"]
+
+    sp = result["self_pay_rows"]
+    lines += [
+        "",
+        f"## Self-Pay ({len(sp)} claim(s), informational only)",
+        "Collected at time of service, not via claims — no payment posting expected "
+        "in Prompt's claim fields.",
+        "",
+    ]
+    lines += _claim_table(sp) if sp else ["_None this period._"]
 
     for section in result["providers"]:
         lines += [
@@ -383,6 +443,7 @@ def main():
 
     merged = build_merged(scheduled, charges, payments)
     result = build_report(merged, charges)
+    result["amd_as_of"] = _amd_as_of()
     summary = _build_summary(result, args.start, args.end, args.facility)
 
     out_path = args.out or f"reports/weekly_schedule_cpt_{args.start}_to_{args.end}.md"
