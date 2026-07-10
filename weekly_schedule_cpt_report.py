@@ -109,7 +109,7 @@ def _payment_status(row) -> str:
 
     if balance <= 0.01:
         if paid <= 0:
-            return "Closed — no payment (written off)"
+            return "NEEDS FOLLOW-UP — billed, $0 posted"
         return f"Closed — paid at {pct}%"
 
     if paid <= 0:
@@ -137,8 +137,25 @@ def build_merged(scheduled: pd.DataFrame, charges: pd.DataFrame, payments: pd.Da
     return df.drop(columns=["Patient Account Number"])
 
 
+def _cpt_summary(claim_number, charges: pd.DataFrame) -> str:
+    lines = charges[charges["Claim Number"] == claim_number]
+    return "; ".join(f"{r['CPT Code']} x{r['Units Billed']}" for _, r in lines.iterrows())
+
+
 def build_report(merged: pd.DataFrame, charges: pd.DataFrame) -> dict:
     providers = sorted(merged["Provider"].dropna().unique())
+
+    follow_up = merged[merged["Payment Status"] == "NEEDS FOLLOW-UP — billed, $0 posted"].copy()
+    follow_up_rows = []
+    for _, v in follow_up.sort_values("Date").iterrows():
+        follow_up_rows.append({
+            "DOS": v["Date"].strftime("%Y-%m-%d"),
+            "Provider": v["Provider"],
+            "Claim Number": v["Prompt Claim Number"],
+            "Visit Type": v["Type"],
+            "CPT": _cpt_summary(v["Prompt Claim Number"], charges),
+            "Billed": v.get("Last Billed"),
+        })
 
     provider_sections = []
     for provider in providers:
@@ -173,6 +190,7 @@ def build_report(merged: pd.DataFrame, charges: pd.DataFrame) -> dict:
 
     return {
         "providers": provider_sections,
+        "follow_up_rows": follow_up_rows,
         "total_scheduled": len(merged),
         "status_totals": merged["Status Bucket"].value_counts().to_dict(),
         "facilities": sorted(merged["Visit Facility"].dropna().unique()),
@@ -207,6 +225,27 @@ def _build_summary(result: dict, start: str, end: str) -> str:
     for status, count in sorted(result["status_totals"].items(), key=lambda x: -x[1]):
         lines.append(f"| {status} | {count} |")
     lines.append(f"| **Total Scheduled** | **{result['total_scheduled']}** |")
+
+    fu = result["follow_up_rows"]
+    lines += [
+        "",
+        f"## Needs Follow-Up — {len(fu)} claim(s) billed with $0 posted",
+        "Billed but no payment or insurance posting on file, and no balance remaining — "
+        "either the claim was never actually sent, payment was received but never keyed "
+        "into Prompt, or an EOB is needed from the payer to confirm status. Hand to billing "
+        "for verification.",
+        "",
+    ]
+    if fu:
+        lines += ["| DOS | Provider | Claim # | Visit Type | CPT | Billed |",
+                   "|---|---|---|---|---|---|"]
+        for r in fu:
+            lines.append(
+                f"| {r['DOS']} | {r['Provider']} | {r['Claim Number']} | {r['Visit Type']} | "
+                f"{r['CPT']} | {_fmt_money(r['Billed'])} |"
+            )
+    else:
+        lines.append("_None this period._")
 
     for section in result["providers"]:
         lines += [
