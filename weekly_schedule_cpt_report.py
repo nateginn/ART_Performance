@@ -72,27 +72,41 @@ def _status_bucket(status: str) -> str:
     return "Other"
 
 
-def load_scheduled_visits(path: str, start: str, end: str) -> pd.DataFrame:
-    df = pd.read_excel(path, sheet_name="All Data", usecols=lambda c: c in OPS_COLS)
+def _read_export(path: str, wanted_cols: list[str]) -> pd.DataFrame:
+    if str(path).lower().endswith(".csv"):
+        return pd.read_csv(path, usecols=lambda c: c in wanted_cols)
+    return pd.read_excel(path, sheet_name="All Data", usecols=lambda c: c in wanted_cols)
+
+
+def _apply_facility(df: pd.DataFrame, facility: str | None) -> pd.DataFrame:
+    if facility and "Visit Facility" in df.columns:
+        return df[df["Visit Facility"] == facility].copy()
+    return df
+
+
+def load_scheduled_visits(path: str, start: str, end: str, facility: str | None = None) -> pd.DataFrame:
+    df = _read_export(path, OPS_COLS)
     df["Date"] = pd.to_datetime(df["Date"])
     mask = (df["Date"] >= start) & (df["Date"] <= end)
-    df = df[mask].copy()
+    df = _apply_facility(df[mask].copy(), facility)
     df["Status Bucket"] = df["Status"].apply(_status_bucket)
     return df
 
 
-def load_charges(path: str, start: str, end: str) -> pd.DataFrame:
-    df = pd.read_csv(path, usecols=lambda c: c in CHARGE_COLS + ["Date Of Service"])
+def load_charges(path: str, start: str, end: str, facility: str | None = None) -> pd.DataFrame:
+    df = _read_export(path, CHARGE_COLS + ["Date Of Service", "Visit Facility"])
     df["Date Of Service"] = pd.to_datetime(df["Date Of Service"])
     mask = (df["Date Of Service"] >= start) & (df["Date Of Service"] <= end)
-    return df[mask].drop(columns=["Date Of Service"])
+    df = _apply_facility(df[mask].copy(), facility)
+    return df.drop(columns=["Date Of Service", "Visit Facility"], errors="ignore")
 
 
-def load_payments(path: str, start: str, end: str) -> pd.DataFrame:
-    df = pd.read_excel(path, sheet_name="All Data", usecols=lambda c: c in REVENUE_COLS + ["DOS"])
+def load_payments(path: str, start: str, end: str, facility: str | None = None) -> pd.DataFrame:
+    df = _read_export(path, REVENUE_COLS + ["DOS", "Visit Facility"])
     df["DOS"] = pd.to_datetime(df["DOS"])
     mask = (df["DOS"] >= start) & (df["DOS"] <= end)
-    return df[mask].drop(columns=["DOS"])
+    df = _apply_facility(df[mask].copy(), facility)
+    return df.drop(columns=["DOS", "Visit Facility"], errors="ignore")
 
 
 def _num(val) -> float:
@@ -217,16 +231,21 @@ def _fmt_money(val) -> str:
     return f"${float(val):,.2f}"
 
 
-def _build_summary(result: dict, start: str, end: str) -> str:
+def _build_summary(result: dict, start: str, end: str, facility: str | None = None) -> str:
+    if facility:
+        scope_note = (f"**Scope note:** filtered to {facility} (--facility flag). "
+                      f"Visit types present: {', '.join(result['visit_types']) or 'n/a'}.")
+    else:
+        scope_note = (f"**Scope note:** source data covers facilities {result['facilities']} "
+                      f"and the following visit types: {', '.join(result['visit_types']) or 'n/a'}. "
+                      "If other facilities or visit types ran that week but aren't listed, "
+                      "the source exports were filtered.")
     lines = [
         "# Weekly Schedule + CPT/Units/Payment Report",
         f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"Period: {start} to {end}",
         "",
-        f"**Scope note:** source data covers facilities {result['facilities']} only "
-        f"and the following visit types: {', '.join(result['visit_types']) or 'n/a'}. "
-        "If other facilities or commercial visits ran that week, re-export all three "
-        "reports without a filter and re-run this script.",
+        scope_note,
         "",
         f"Same-day, multi-provider encounters this period: {result['multi_provider_encounters']}",
         "",
@@ -319,19 +338,44 @@ def _build_summary(result: dict, start: str, end: str) -> str:
     return "\n".join(lines)
 
 
+def _auto_download(start: str, end: str) -> dict:
+    from datetime import date
+    from prompt_report_downloader import download_report, REPORT_TYPES
+
+    start_d, end_d = date.fromisoformat(start), date.fromisoformat(end)
+    paths = {}
+    for key in ("operations", "charges", "revenue"):
+        print(f"\nDownloading {REPORT_TYPES[key]} from Prompt EMR...")
+        paths[key] = str(download_report(start=start_d, end=end_d,
+                                          report_name=REPORT_TYPES[key]))
+    return paths
+
+
 def main():
     parser = argparse.ArgumentParser(description="Weekly schedule + CPT/units + payment report")
     parser.add_argument("--start", required=True, help="Start date YYYY-MM-DD")
     parser.add_argument("--end", required=True, help="End date YYYY-MM-DD")
-    parser.add_argument("--operations", required=True, help="Path to Operations Report xlsx")
-    parser.add_argument("--charges", required=True, help="Path to Individual Charges Report CSV")
-    parser.add_argument("--revenue", required=True, help="Path to Revenue Report xlsx (payment status)")
+    parser.add_argument("--auto", action="store_true",
+                         help="Download the three reports from Prompt EMR automatically "
+                              "instead of passing file paths")
+    parser.add_argument("--operations", help="Path to Operations Report export")
+    parser.add_argument("--charges", help="Path to Individual Charges export")
+    parser.add_argument("--revenue", help="Path to Revenue Report export (payment status)")
+    parser.add_argument("--facility", default=None,
+                         help='Filter to one facility, e.g. "ART Denver" (default: all)')
     parser.add_argument("--out", default=None, help="Output markdown path (default: reports/weekly_schedule_cpt_<start>_to_<end>.md)")
     args = parser.parse_args()
 
-    scheduled = load_scheduled_visits(args.operations, args.start, args.end)
-    charges = load_charges(args.charges, args.start, args.end)
-    payments = load_payments(args.revenue, args.start, args.end)
+    if args.auto:
+        paths = _auto_download(args.start, args.end)
+        args.operations, args.charges, args.revenue = (
+            paths["operations"], paths["charges"], paths["revenue"])
+    elif not (args.operations and args.charges and args.revenue):
+        parser.error("either pass --auto or all three of --operations/--charges/--revenue")
+
+    scheduled = load_scheduled_visits(args.operations, args.start, args.end, args.facility)
+    charges = load_charges(args.charges, args.start, args.end, args.facility)
+    payments = load_payments(args.revenue, args.start, args.end, args.facility)
 
     print(f"Scheduled visits loaded: {len(scheduled):,}")
     print(f"Charge line items loaded: {len(charges):,}")
@@ -339,7 +383,7 @@ def main():
 
     merged = build_merged(scheduled, charges, payments)
     result = build_report(merged, charges)
-    summary = _build_summary(result, args.start, args.end)
+    summary = _build_summary(result, args.start, args.end, args.facility)
 
     out_path = args.out or f"reports/weekly_schedule_cpt_{args.start}_to_{args.end}.md"
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)

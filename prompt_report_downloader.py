@@ -44,6 +44,12 @@ DOWNLOAD_DIR = PROJECT_DIR / "data" / "emr_downloads"
 BASE_URL = "https://go.promptemr.com"
 REPORT_NAME = "Visits Revenue Report"
 
+REPORT_TYPES = {
+    "revenue": "Visits Revenue Report",
+    "operations": "Operations Report",
+    "charges": "Individual Charges",
+}
+
 load_dotenv(PROJECT_DIR / ".env")
 
 
@@ -170,9 +176,12 @@ def _set_all_time(page):
     page.wait_for_timeout(1_500)
 
 
-def download_report(start=None, end=None, all_time=False, headless=True, _retry_headed=True):
+def download_report(start=None, end=None, all_time=False, headless=True, _retry_headed=True,
+                    report_name=REPORT_NAME):
     """
-    Download the Visits Revenue Report xlsx. Returns the saved file path.
+    Download one report from the Downloads tab (default: Visits Revenue
+    Report). report_name must match the row label exactly — see
+    REPORT_TYPES for the supported ones. Returns the saved file path.
     """
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     downloads = []
@@ -186,7 +195,8 @@ def download_report(start=None, end=None, all_time=False, headless=True, _retry_
                 if not _retry_headed:
                     raise RuntimeError("Session expired and headed login already failed")
                 print("Session expired — opening a visible browser window for login...")
-                return download_report(start, end, all_time, headless=False, _retry_headed=False)
+                return download_report(start, end, all_time, headless=False,
+                                       _retry_headed=False, report_name=report_name)
             _credential_login(page)
             SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
             SESSION_PATH.write_text(json.dumps(context.storage_state()), encoding="utf-8")
@@ -213,12 +223,12 @@ def download_report(start=None, end=None, all_time=False, headless=True, _retry_
         page.wait_for_timeout(8_000)
 
         row = page.locator("div.row.no-wrap.items-center.justify-between").filter(
-            has=page.locator(f"div:text-is('{REPORT_NAME}')")
+            has=page.locator(f"div:text-is('{report_name}')")
         )
         if row.count() != 1:
             _screenshot(page, "report_row_not_found")
             raise RuntimeError(
-                f"Expected exactly one '{REPORT_NAME}' row, found {row.count()} — "
+                f"Expected exactly one '{report_name}' row, found {row.count()} — "
                 "Prompt UI may have changed"
             )
 
@@ -273,11 +283,13 @@ def load_into_duckdb(xlsx_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Download Prompt EMR Visits Revenue Report")
+    parser = argparse.ArgumentParser(description="Download a Prompt EMR report from the Downloads tab")
     parser.add_argument("--start", type=date.fromisoformat, help="Start date YYYY-MM-DD")
     parser.add_argument("--end", type=date.fromisoformat, help="End date YYYY-MM-DD")
     parser.add_argument("--all-time", action="store_true", help="Full history (like the manual All Data export)")
-    parser.add_argument("--load", action="store_true", help="Load result into DuckDB prompt_visits")
+    parser.add_argument("--report", choices=sorted(REPORT_TYPES), default="revenue",
+                        help="Which report to download (default: revenue)")
+    parser.add_argument("--load", action="store_true", help="Load result into DuckDB prompt_visits (revenue report only)")
     parser.add_argument("--headed", action="store_true", help="Show the browser window")
     args = parser.parse_args()
 
@@ -285,9 +297,11 @@ def main():
         parser.error("--start and --end must be used together")
     if args.all_time and args.start:
         parser.error("--all-time cannot be combined with --start/--end")
+    if args.load and args.report != "revenue":
+        parser.error("--load only applies to the revenue report (prompt_visits table)")
 
     path = download_report(start=args.start, end=args.end, all_time=args.all_time,
-                           headless=not args.headed)
+                           headless=not args.headed, report_name=REPORT_TYPES[args.report])
     if args.load:
         load_into_duckdb(path)
 
