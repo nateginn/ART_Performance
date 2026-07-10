@@ -872,14 +872,26 @@ with tab5:
     else:
         s = auto_result["stats"]
 
+        lien_df_kpi = auto_result["lien"]
+        lien_balance = 0.0
+        if len(lien_df_kpi) > 0:
+            lien_balance = (
+                pd.to_numeric(lien_df_kpi["Last Billed"], errors="coerce").fillna(0).sum()
+                - pd.to_numeric(lien_df_kpi["Total Paid"], errors="coerce").fillna(0).sum()
+            )
+
         # ── KPI Cards ─────────────────────────────────────────────────────────
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
         c1.metric("Total Auto Visits",      f"{s['total_auto']:,}")
         c2.metric("Direct Lien (excluded)", f"{s['lien_count']:,}")
-        c3.metric("🔴 Unbilled",             f"{s['unbilled_count']:,}")
-        c4.metric("🟠 Unpaid",               f"{s['unpaid_count']:,}",
+        c3.metric("⚖️ Direct Lien Balance",  fmt_dollar(lien_balance),
+                  help="Total billed minus paid across all direct lien (attorney-held) "
+                       "cases — outstanding until each case settles. As of the latest "
+                       "prompt_visits refresh.")
+        c4.metric("🔴 Unbilled",             f"{s['unbilled_count']:,}")
+        c5.metric("🟠 Unpaid",               f"{s['unpaid_count']:,}",
                   help=f"Billed but $0 received after {s['unpaid_days']} days")
-        c5.metric("Revenue at Risk",        fmt_dollar(s["unpaid_exposure"]))
+        c6.metric("Revenue at Risk",        fmt_dollar(s["unpaid_exposure"]))
 
         st.divider()
 
