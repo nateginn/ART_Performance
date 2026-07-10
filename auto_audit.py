@@ -158,8 +158,8 @@ def run_audit(start: str | None = None, end: str | None = None,
 
     lien_df["is_lien"] = True
     lien_cols = ["Patient Account Number", "Patient", "DOS_key", "Visit Stage",
-                 "Visit Type", "Case Primary Insurance", "Visit Facility",
-                 "Last Billed", "Total Paid", "is_lien"]
+                 "Visit Type", "Case Title", "Case Primary Insurance", "Visit Facility",
+                 "Last Billed", "Total Paid", "Pt. Current Balance", "is_lien"]
     lien_out = lien_df[[c for c in lien_cols if c in lien_df.columns]].copy()
 
     return {

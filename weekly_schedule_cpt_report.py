@@ -41,6 +41,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from auto_audit import _is_lien
+
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
@@ -55,7 +57,7 @@ OPS_COLS = ["Patient Account Number", "Date", "Prompt Claim Number", "Type",
 CHARGE_COLS = ["Claim Number", "CPT Code", "Units Billed", "$ Billed"]
 REVENUE_COLS = ["Prompt Claim Number", "Last Billed", "Patient Paid",
                  "Primary Insurance Paid", "Total Paid", "Ins. Posted",
-                 "Pt. Current Balance"]
+                 "Pt. Current Balance", "Case Primary Insurance"]
 
 
 def _status_bucket(status: str) -> str:
@@ -133,6 +135,7 @@ def build_merged(scheduled: pd.DataFrame, charges: pd.DataFrame, payments: pd.Da
     payments = payments.drop_duplicates(subset=["Prompt Claim Number"])
     df = df.merge(payments, on="Prompt Claim Number", how="left")
     df["Payment Status"] = df.apply(_payment_status, axis=1)
+    df["Is Direct Lien"] = df["Case Primary Insurance"].apply(_is_lien)
 
     return df.drop(columns=["Patient Account Number"])
 
@@ -145,17 +148,24 @@ def _cpt_summary(claim_number, charges: pd.DataFrame) -> str:
 def build_report(merged: pd.DataFrame, charges: pd.DataFrame) -> dict:
     providers = sorted(merged["Provider"].dropna().unique())
 
-    follow_up = merged[merged["Payment Status"] == "NEEDS FOLLOW-UP — billed, $0 posted"].copy()
-    follow_up_rows = []
-    for _, v in follow_up.sort_values("Date").iterrows():
-        follow_up_rows.append({
-            "DOS": v["Date"].strftime("%Y-%m-%d"),
-            "Provider": v["Provider"],
-            "Claim Number": v["Prompt Claim Number"],
-            "Visit Type": v["Type"],
-            "CPT": _cpt_summary(v["Prompt Claim Number"], charges),
-            "Billed": v.get("Last Billed"),
-        })
+    needs_follow_up = merged[merged["Payment Status"] == "NEEDS FOLLOW-UP — billed, $0 posted"].copy()
+
+    def _rows(df):
+        rows = []
+        for _, v in df.sort_values("Date").iterrows():
+            rows.append({
+                "DOS": v["Date"].strftime("%Y-%m-%d"),
+                "Provider": v["Provider"],
+                "Claim Number": v["Prompt Claim Number"],
+                "Visit Type": v["Type"],
+                "Primary Insurance": v.get("Case Primary Insurance"),
+                "CPT": _cpt_summary(v["Prompt Claim Number"], charges),
+                "Billed": v.get("Last Billed"),
+            })
+        return rows
+
+    follow_up_rows = _rows(needs_follow_up[~needs_follow_up["Is Direct Lien"]])
+    lien_pending_rows = _rows(needs_follow_up[needs_follow_up["Is Direct Lien"]])
 
     provider_sections = []
     for provider in providers:
@@ -172,6 +182,7 @@ def build_report(merged: pd.DataFrame, charges: pd.DataFrame) -> dict:
                 "Claim Number": v["Prompt Claim Number"],
                 "Encounter #": v["Encounter #"],
                 "Visit Type": v["Type"],
+                "Primary Insurance": v.get("Case Primary Insurance"),
                 "Co-seen by": ", ".join(co_seen) if co_seen else "",
                 "cpt_lines": claim_charges[["CPT Code", "Units Billed", "$ Billed"]].to_dict("records"),
                 "Last Billed": v.get("Last Billed"),
@@ -191,6 +202,7 @@ def build_report(merged: pd.DataFrame, charges: pd.DataFrame) -> dict:
     return {
         "providers": provider_sections,
         "follow_up_rows": follow_up_rows,
+        "lien_pending_rows": lien_pending_rows,
         "total_scheduled": len(merged),
         "status_totals": merged["Status Bucket"].value_counts().to_dict(),
         "facilities": sorted(merged["Visit Facility"].dropna().unique()),
@@ -237,12 +249,32 @@ def _build_summary(result: dict, start: str, end: str) -> str:
         "",
     ]
     if fu:
-        lines += ["| DOS | Provider | Claim # | Visit Type | CPT | Billed |",
-                   "|---|---|---|---|---|---|"]
+        lines += ["| DOS | Provider | Claim # | Visit Type | Primary Insurance | CPT | Billed |",
+                   "|---|---|---|---|---|---|---|"]
         for r in fu:
             lines.append(
                 f"| {r['DOS']} | {r['Provider']} | {r['Claim Number']} | {r['Visit Type']} | "
-                f"{r['CPT']} | {_fmt_money(r['Billed'])} |"
+                f"{r['Primary Insurance']} | {r['CPT']} | {_fmt_money(r['Billed'])} |"
+            )
+    else:
+        lines.append("_None this period._")
+
+    lp = result["lien_pending_rows"]
+    lines += [
+        "",
+        f"## Direct Lien — Pending Settlement ({len(lp)} claim(s), informational only)",
+        "Billed with $0 posted, but the payer is a direct lien (attorney-held, not a "
+        "contracted lien company) — payment isn't expected until the case settles. "
+        "No action needed from billing; listed for visibility only.",
+        "",
+    ]
+    if lp:
+        lines += ["| DOS | Provider | Claim # | Visit Type | Primary Insurance | CPT | Billed |",
+                   "|---|---|---|---|---|---|---|"]
+        for r in lp:
+            lines.append(
+                f"| {r['DOS']} | {r['Provider']} | {r['Claim Number']} | {r['Visit Type']} | "
+                f"{r['Primary Insurance']} | {r['CPT']} | {_fmt_money(r['Billed'])} |"
             )
     else:
         lines.append("_None this period._")
@@ -265,7 +297,7 @@ def _build_summary(result: dict, start: str, end: str) -> str:
                 f"### Checked-In Visits ({section['provider']})",
             ]
             for v in sorted(section["visit_rows"], key=lambda x: (x["DOS"], x["Claim Number"])):
-                header = f"**{v['DOS']} — {v['Visit Type']} — Encounter #{v['Encounter #']}**"
+                header = f"**{v['DOS']} — {v['Visit Type']} — {v['Primary Insurance']} — Encounter #{v['Encounter #']}**"
                 if v["Co-seen by"]:
                     header += f" _(same day, also seen by: {v['Co-seen by']})_"
                 lines.append("\n" + header)
