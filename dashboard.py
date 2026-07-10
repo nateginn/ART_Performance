@@ -11,7 +11,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timezone
 
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
@@ -189,13 +189,31 @@ with st.sidebar:
         ).fetchall()
         con.close()
         if meta_rows:
+            STALE_DAYS = {"prompt_visits": 7, "amd_billing": 35}
             st.caption("**Loaded tables**")
             for tname, loaded_at in meta_rows:
                 try:
-                    ts = datetime.fromisoformat(loaded_at).strftime("%m/%d %I:%M %p")
+                    dt = datetime.fromisoformat(str(loaded_at).replace("Z", "+00:00"))
+                    ts = dt.strftime("%m/%d %I:%M %p")
+                    age_days = (datetime.now(dt.tzinfo) - dt).days
                 except Exception:
-                    ts = loaded_at[:10] if loaded_at else "?"
-                st.caption(f"• {tname}  {ts}")
+                    ts = str(loaded_at)[:10] if loaded_at else "?"
+                    age_days = None
+                warn = ""
+                limit = STALE_DAYS.get(tname)
+                if limit is not None and age_days is not None and age_days > limit:
+                    warn = f" ⚠️ {age_days}d old"
+                st.caption(f"• {tname}  {ts}{warn}")
+            if any(t == "amd_billing" for t, _ in meta_rows):
+                amd_dt = next(l for t, l in meta_rows if t == "amd_billing")
+                try:
+                    amd_age = (datetime.now(timezone.utc) -
+                               datetime.fromisoformat(str(amd_dt).replace("Z", "+00:00"))).days
+                    if amd_age > 35:
+                        st.warning(f"AMD data is {amd_age} days old — commercial payment "
+                                   "status is behind. Upload a fresh AMD export (Tab 3).")
+                except Exception:
+                    pass
         else:
             st.caption("No data loaded yet.")
     except Exception:
