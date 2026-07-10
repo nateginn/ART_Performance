@@ -93,16 +93,28 @@ def load_payments(path: str, start: str, end: str) -> pd.DataFrame:
     return df[mask].drop(columns=["DOS"])
 
 
+def _num(val) -> float:
+    return 0.0 if pd.isna(val) else float(val)
+
+
 def _payment_status(row) -> str:
-    billed = row.get("Last Billed") or 0
-    paid = row.get("Total Paid") or 0
+    billed = _num(row.get("Last Billed"))
+    paid = _num(row.get("Total Paid"))
+    balance = _num(row.get("Pt. Current Balance"))
+
     if billed == 0:
-        return "n/a"
+        return "UNBILLED"
+
+    pct = round(paid / billed * 100)
+
+    if balance <= 0.01:
+        if paid <= 0:
+            return "Closed — no payment (written off)"
+        return f"Closed — paid at {pct}%"
+
     if paid <= 0:
         return "Not yet posted"
-    if paid >= billed - 0.01:
-        return "Paid in full"
-    return "Partially posted"
+    return f"Outstanding — {pct}% paid, ${balance:,.2f} due"
 
 
 def build_merged(scheduled: pd.DataFrame, charges: pd.DataFrame, payments: pd.DataFrame) -> pd.DataFrame:
