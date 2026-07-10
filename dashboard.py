@@ -133,10 +133,14 @@ def compute_monthly_collections(prompt_df, amd_df, month_str: str) -> dict:
         prov = row.get('Provider', 'Unknown')
         provider_collected[prov] = provider_collected.get(prov, 0.0) + collected
 
-    by_provider = pd.DataFrame([
-        {'Provider': p, 'Charges': provider_charges.get(p, 0), 'Collected': provider_collected.get(p, 0)}
-        for p in set(list(provider_charges.keys()) + list(provider_collected.keys()))
-    ]).sort_values('Charges', ascending=True)
+    providers = set(list(provider_charges.keys()) + list(provider_collected.keys()))
+    if providers:
+        by_provider = pd.DataFrame([
+            {'Provider': p, 'Charges': provider_charges.get(p, 0), 'Collected': provider_collected.get(p, 0)}
+            for p in providers
+        ]).sort_values('Charges', ascending=True)
+    else:
+        by_provider = pd.DataFrame(columns=['Provider', 'Charges', 'Collected'])
 
     allowed = billing[billing['Primary Allowed'] > 0]
     coll_rate = (
