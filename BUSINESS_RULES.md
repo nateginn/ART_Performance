@@ -1,5 +1,46 @@
 # ART Performance — Business Rules & Data Definitions
 
+## The Two-Era Billing Model (ground truth, per Nate 2026-07-10)
+
+Both entities (ART Greeley LLC, ART Denver LLC) opened **May 2025**.
+
+### Era 1 — May 1 to Aug 31, 2025 ("AMD era")
+- EHR/scheduling: **Practice Fusion**. Billing: **AMD**. The two systems were not connected.
+- **AMD holds ALL billing for both facilities, every payer type**, for this window.
+- Schedule and charges from this era are **frozen** — they will never change.
+- **Payments are NOT frozen** — commercial payments still trickle in against May–Aug claims.
+  They only update in our database when a fresh AMD export is loaded.
+- Practice Fusion visit-level detail (no-shows, cancellations) for this era is not yet in the
+  database; Nate is investigating whether PF can export it. AMD is sufficient for billing truth.
+
+### Era 2 — Sep 1, 2025 to present ("Prompt era")
+- All visits at both facilities are scheduled in **Prompt EMR**.
+- **Auto, work comp, self-pay**: charges AND payments live entirely in Prompt.
+  Fully covered by the automated downloader (`prompt_report_downloader.py`).
+- **Commercial insurance**: charges are entered in Prompt (`Last Billed` IS populated),
+  then transferred to **AMD** for claim submission and payment posting. **Payments never
+  post in Prompt for commercial.** This is ongoing with no end date — the new entities
+  lack commercial contracts, so billing runs through previously contracted entities.
+  Primarily a Greeley phenomenon.
+- Consequence for reporting: a commercial visit in Prompt showing billed-with-$0-paid is
+  **normal**, not a follow-up item. Payment truth for commercial is AMD, always.
+- Self-pay is collected at time of service — claim-payment fields staying $0 in Prompt
+  is also normal.
+
+### Data refresh model
+| Data | Source | Refresh | Automated? |
+|---|---|---|---|
+| Sep 2025+ visits; auto/WC/self-pay charges & payments | Prompt | `python prompt_report_downloader.py --all-time --load` | Yes |
+| Commercial payments (all eras) + May–Aug 2025 all-payer billing | AMD export | Manual export, monthly or ad-hoc → dashboard Tab 3 or `db_cache.py --amd-billing FILE` | No |
+| May–Aug 2025 visit-level schedule | Practice Fusion | Under investigation | No |
+
+Both `prompt_visits` and `amd_billing` are **full-replace snapshots** — each load drops and
+recreates the table from the fresh export, so new dates of service, new patients, and updated
+payment amounts are all handled with no merge logic. `data_inventory.py` reports per-table
+freshness; the dashboard sidebar warns when AMD data exceeds 35 days old.
+
+---
+
 ## Visit Stage Definitions
 
 Visit Stage is a field in the Prompt EMR export that describes the current status of a patient visit.
