@@ -90,11 +90,21 @@ def build_summary(case_balances: pd.DataFrame) -> str:
     if len(case_balances):
         lines += ["| Patient Account # | Case | Facility | Visits | Billed | Paid | Balance |",
                    "|---|---|---|---|---|---|---|"]
-        for _, r in case_balances.iterrows():
+        for account, patient_cases in case_balances.sort_values(
+                ["Patient Account Number", "Case Title"]).groupby(
+                "Patient Account Number", sort=True):
+            for _, r in patient_cases.iterrows():
+                lines.append(
+                    f"| {r['Patient Account Number']} | {r['Case Title']} | "
+                    f"{r['Visit Facility']} | {int(r['Visits'])} | {_fmt_money(r['Billed'])} | "
+                    f"{_fmt_money(r['Paid'])} | {_fmt_money(r['Balance'])} |"
+                )
             lines.append(
-                f"| {r['Patient Account Number']} | {r['Case Title']} | "
-                f"{r['Visit Facility']} | {int(r['Visits'])} | {_fmt_money(r['Billed'])} | "
-                f"{_fmt_money(r['Paid'])} | {_fmt_money(r['Balance'])} |"
+                f"| **{account} — TOTAL** | All services | | "
+                f"**{int(patient_cases['Visits'].sum())}** | "
+                f"**{_fmt_money(patient_cases['Billed'].sum())}** | "
+                f"**{_fmt_money(patient_cases['Paid'].sum())}** | "
+                f"**{_fmt_money(patient_cases['Balance'].sum())}** |"
             )
     else:
         lines.append("_No direct lien cases with an outstanding balance._")
