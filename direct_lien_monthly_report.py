@@ -73,6 +73,32 @@ def _fmt_money(val) -> str:
     return f"${float(val):,.2f}"
 
 
+def _facility_group(facility: str) -> str:
+    return facility if "," not in str(facility) else "Multiple facilities"
+
+
+def _patient_table_lines(cases: pd.DataFrame) -> list[str]:
+    lines = ["| Patient Account # | Case | Visits | Billed | Paid | Balance |",
+              "|---|---|---|---|---|---|"]
+    for account, patient_cases in cases.sort_values(
+            ["Patient Account Number", "Case Title"]).groupby(
+            "Patient Account Number", sort=True):
+        for _, r in patient_cases.iterrows():
+            lines.append(
+                f"| {r['Patient Account Number']} | {r['Case Title']} | "
+                f"{int(r['Visits'])} | {_fmt_money(r['Billed'])} | "
+                f"{_fmt_money(r['Paid'])} | {_fmt_money(r['Balance'])} |"
+            )
+        lines.append(
+            f"| **{account} — TOTAL** | All services | "
+            f"**{int(patient_cases['Visits'].sum())}** | "
+            f"**{_fmt_money(patient_cases['Billed'].sum())}** | "
+            f"**{_fmt_money(patient_cases['Paid'].sum())}** | "
+            f"**{_fmt_money(patient_cases['Balance'].sum())}** |"
+        )
+    return lines
+
+
 def build_summary(case_balances: pd.DataFrame) -> str:
     grand_total = case_balances["Balance"].sum() if len(case_balances) else 0.0
     lines = [
@@ -87,27 +113,30 @@ def build_summary(case_balances: pd.DataFrame) -> str:
         f"Across {len(case_balances)} case(s), {case_balances['Patient Account Number'].nunique() if len(case_balances) else 0} patient(s).",
         "",
     ]
-    if len(case_balances):
-        lines += ["| Patient Account # | Case | Facility | Visits | Billed | Paid | Balance |",
-                   "|---|---|---|---|---|---|---|"]
-        for account, patient_cases in case_balances.sort_values(
-                ["Patient Account Number", "Case Title"]).groupby(
-                "Patient Account Number", sort=True):
-            for _, r in patient_cases.iterrows():
-                lines.append(
-                    f"| {r['Patient Account Number']} | {r['Case Title']} | "
-                    f"{r['Visit Facility']} | {int(r['Visits'])} | {_fmt_money(r['Billed'])} | "
-                    f"{_fmt_money(r['Paid'])} | {_fmt_money(r['Balance'])} |"
-                )
-            lines.append(
-                f"| **{account} — TOTAL** | All services | | "
-                f"**{int(patient_cases['Visits'].sum())}** | "
-                f"**{_fmt_money(patient_cases['Billed'].sum())}** | "
-                f"**{_fmt_money(patient_cases['Paid'].sum())}** | "
-                f"**{_fmt_money(patient_cases['Balance'].sum())}** |"
-            )
-    else:
+    if not len(case_balances):
         lines.append("_No direct lien cases with an outstanding balance._")
+        return "\n".join(lines)
+
+    case_balances = case_balances.copy()
+    case_balances["Facility Group"] = case_balances["Visit Facility"].apply(_facility_group)
+
+    lines += ["| Facility | Cases | Patients | Balance |",
+               "|---|---|---|---|"]
+    facility_groups = case_balances.groupby("Facility Group", sort=True)
+    for facility, grp in facility_groups:
+        lines.append(
+            f"| {facility} | {len(grp)} | {grp['Patient Account Number'].nunique()} | "
+            f"{_fmt_money(grp['Balance'].sum())} |"
+        )
+
+    for facility, grp in facility_groups:
+        lines += [
+            "",
+            f"## {facility} — {_fmt_money(grp['Balance'].sum())} "
+            f"({len(grp)} case(s), {grp['Patient Account Number'].nunique()} patient(s))",
+            "",
+        ]
+        lines += _patient_table_lines(grp)
 
     return "\n".join(lines)
 

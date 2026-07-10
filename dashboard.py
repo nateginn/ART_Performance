@@ -874,20 +874,30 @@ with tab5:
 
         lien_df_kpi = auto_result["lien"]
         lien_balance = 0.0
+        lien_by_facility = {}
         if len(lien_df_kpi) > 0:
-            lien_balance = (
-                pd.to_numeric(lien_df_kpi["Last Billed"], errors="coerce").fillna(0).sum()
-                - pd.to_numeric(lien_df_kpi["Total Paid"], errors="coerce").fillna(0).sum()
+            lien_calc = lien_df_kpi.copy()
+            lien_calc["_bal"] = (
+                pd.to_numeric(lien_calc["Last Billed"], errors="coerce").fillna(0)
+                - pd.to_numeric(lien_calc["Total Paid"], errors="coerce").fillna(0)
             )
+            lien_balance = lien_calc["_bal"].sum()
+            lien_by_facility = lien_calc.groupby("Visit Facility")["_bal"].sum().to_dict()
 
         # ── KPI Cards ─────────────────────────────────────────────────────────
         c1, c2, c3, c4, c5, c6 = st.columns(6)
         c1.metric("Total Auto Visits",      f"{s['total_auto']:,}")
         c2.metric("Direct Lien (excluded)", f"{s['lien_count']:,}")
+        facility_split = " · ".join(
+            f"{fac.replace('ART ', '')} {fmt_dollar(bal)}"
+            for fac, bal in sorted(lien_by_facility.items())
+        )
         c3.metric("⚖️ Direct Lien Balance",  fmt_dollar(lien_balance),
                   help="Total billed minus paid across all direct lien (attorney-held) "
                        "cases — outstanding until each case settles. As of the latest "
                        "prompt_visits refresh.")
+        if facility_split:
+            c3.caption(facility_split)
         c4.metric("🔴 Unbilled",             f"{s['unbilled_count']:,}")
         c5.metric("🟠 Unpaid",               f"{s['unpaid_count']:,}",
                   help=f"Billed but $0 received after {s['unpaid_days']} days")
