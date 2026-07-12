@@ -398,16 +398,39 @@ def status():
     print()
 
 
+def backup(keep: int = 7) -> str:
+    import shutil
+    from datetime import datetime as _dt
+
+    os.makedirs("backups", exist_ok=True)
+    dest = os.path.join("backups", f"art_data_{_dt.now().strftime('%Y%m%d')}.duckdb")
+    shutil.copy2(DB_PATH, dest)
+    print(f"Backup saved: {dest}")
+
+    existing = sorted(
+        f for f in os.listdir("backups")
+        if f.startswith("art_data_") and f.endswith(".duckdb")
+    )
+    for old in existing[:-keep]:
+        os.remove(os.path.join("backups", old))
+        print(f"Removed old backup: {old}")
+    return dest
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Refresh ART local DuckDB cache")
     parser.add_argument("--force",       action="store_true", help="Force re-download/reload")
     parser.add_argument("--status",      action="store_true", help="Show cache status")
+    parser.add_argument("--backup",      action="store_true", help="Copy art_data.duckdb to backups/ (keeps 7)")
     parser.add_argument("--table",       choices=["prompt_visits", "greeley_pl", "denver_pl"])
     parser.add_argument("--amd-billing", metavar="FILE", help="Load AMD billing CSV/XLSX")
     parser.add_argument("--unc-notes",   metavar="FILE", help="Load Practice Fusion chart notes CSV")
     args = parser.parse_args()
 
+    if args.backup:
+        backup()
+        sys.exit(0)
     if args.status:
         status()
         sys.exit(0)

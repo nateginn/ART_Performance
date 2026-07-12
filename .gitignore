@@ -68,3 +68,4 @@ data/*.md
 data/*.json
 reports/
 art_data.duckdb
+backups/

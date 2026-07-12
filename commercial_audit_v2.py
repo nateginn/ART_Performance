@@ -74,7 +74,14 @@ def _fmt(val) -> str:
         return str(val)
 
 
-def run_audit(start: str | None = None, end: str | None = None) -> dict:
+AMD_FACILITY_OFFICE_KEYS = {
+    "ART Denver": ["161514", "127384"],
+    "ART Greeley": ["161515", "147076", "139591"],
+}
+
+
+def run_audit(start: str | None = None, end: str | None = None,
+              facility: str | None = None) -> dict:
     con = db_cache.connect()
 
     tables = {r[0] for r in con.execute(
@@ -124,12 +131,15 @@ def run_audit(start: str | None = None, end: str | None = None) -> dict:
           AND DOS_key >= '{PROMPT_START}'
           {('AND DOS_key >= ?' if start and start > PROMPT_START else '')}
           {('AND DOS_key <= ?' if end else '')}
+          {('AND "Visit Facility" = ?' if facility else '')}
     """
     prompt_params = []
     if start and start > PROMPT_START:
         prompt_params.append(start)
     if end:
         prompt_params.append(end)
+    if facility:
+        prompt_params.append(facility)
 
     prompt_df = con.execute(prompt_sql, prompt_params).df()
     print(f"✓ Prompt commercial visits (Sep 2025+): {len(prompt_df):,}")
@@ -142,6 +152,12 @@ def run_audit(start: str | None = None, end: str | None = None) -> dict:
     if end:
         amd_sql += " AND DOS_key <= ?"
         amd_params.append(end)
+    if facility:
+        keys = AMD_FACILITY_OFFICE_KEYS.get(facility, [])
+        if keys:
+            placeholders = " OR ".join("office_key LIKE ?" for _ in keys)
+            amd_sql += f" AND ({placeholders})"
+            amd_params.extend(f"{k}%" for k in keys)
 
     amd_df = con.execute(amd_sql, amd_params).df()
     con.close()
@@ -389,13 +405,15 @@ def main():
     parser = argparse.ArgumentParser(description="Commercial Insurance Audit v2")
     parser.add_argument("--start", help="Start date YYYY-MM-DD (default: all)")
     parser.add_argument("--end",   help="End date YYYY-MM-DD (default: all)")
+    parser.add_argument("--facility", choices=sorted(AMD_FACILITY_OFFICE_KEYS),
+                        help="Filter to one facility (default: all)")
     args = parser.parse_args()
 
     print("\n" + "=" * 60)
     print("COMMERCIAL INSURANCE AUDIT v2")
     print("=" * 60)
 
-    result = run_audit(start=args.start, end=args.end)
+    result = run_audit(start=args.start, end=args.end, facility=args.facility)
     save_outputs(result, start=args.start, end=args.end)
 
 

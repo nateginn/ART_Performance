@@ -60,7 +60,8 @@ def _fmt(val) -> str:
 
 
 def run_audit(start: str | None = None, end: str | None = None,
-              unpaid_days: int = DEFAULT_UNPAID_DAYS) -> dict:
+              unpaid_days: int = DEFAULT_UNPAID_DAYS,
+              facility: str | None = None) -> dict:
     con = db_cache.connect()
 
     tables = {r[0] for r in con.execute(
@@ -88,6 +89,9 @@ def run_audit(start: str | None = None, end: str | None = None,
     if end:
         sql += " AND DOS_key <= ?"
         params.append(end)
+    if facility:
+        sql += ' AND "Visit Facility" = ?'
+        params.append(facility)
 
     df = con.execute(sql, params).df()
     con.close()
@@ -317,13 +321,16 @@ def main():
     parser.add_argument("--end",         help="End date YYYY-MM-DD")
     parser.add_argument("--unpaid-days", type=int, default=DEFAULT_UNPAID_DAYS,
                         help=f"Days from DOS before flagging as UNPAID (default: {DEFAULT_UNPAID_DAYS})")
+    parser.add_argument("--facility", default=None,
+                        help='Filter to one facility, e.g. "ART Denver" (default: all)')
     args = parser.parse_args()
 
     print("\n" + "=" * 60)
     print("AUTO / PERSONAL INJURY CASE AUDIT")
     print("=" * 60)
 
-    result = run_audit(start=args.start, end=args.end, unpaid_days=args.unpaid_days)
+    result = run_audit(start=args.start, end=args.end, unpaid_days=args.unpaid_days,
+                       facility=args.facility)
     save_outputs(result, start=args.start, end=args.end)
 
 
