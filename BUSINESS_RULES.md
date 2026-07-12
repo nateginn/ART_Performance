@@ -21,7 +21,9 @@ Both entities (ART Greeley LLC, ART Denver LLC) opened **May 2025**.
   then transferred to **AMD** for claim submission and payment posting. **Payments never
   post in Prompt for commercial.** This is ongoing with no end date — the new entities
   lack commercial contracts, so billing runs through previously contracted entities.
-  Primarily a Greeley phenomenon.
+  **Greeley only: no commercial insurance is billed through the Denver office.** Zero
+  Denver rows in AMD is correct and expected, not a data gap. (Prompt may still show a
+  handful of COM-type visits at ART Denver; those are not billed through AMD.)
 - Consequence for reporting: a commercial visit in Prompt showing billed-with-$0-paid is
   **normal**, not a follow-up item. Payment truth for commercial is AMD, always.
 - Self-pay is collected at time of service — claim-payment fields staying $0 in Prompt
