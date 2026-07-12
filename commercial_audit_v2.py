@@ -74,10 +74,7 @@ def _fmt(val) -> str:
         return str(val)
 
 
-AMD_FACILITY_OFFICE_KEYS = {
-    "ART Denver": ["161514", "127384"],
-    "ART Greeley": ["161515", "147076", "139591"],
-}
+FACILITIES = ["ART Denver", "ART Greeley"]
 
 
 def run_audit(start: str | None = None, end: str | None = None,
@@ -152,12 +149,6 @@ def run_audit(start: str | None = None, end: str | None = None,
     if end:
         amd_sql += " AND DOS_key <= ?"
         amd_params.append(end)
-    if facility:
-        keys = AMD_FACILITY_OFFICE_KEYS.get(facility, [])
-        if keys:
-            placeholders = " OR ".join("office_key LIKE ?" for _ in keys)
-            amd_sql += f" AND ({placeholders})"
-            amd_params.extend(f"{k}%" for k in keys)
 
     amd_df = con.execute(amd_sql, amd_params).df()
     con.close()
@@ -273,6 +264,15 @@ def run_audit(start: str | None = None, end: str | None = None,
     ghost_df    = detail_df[detail_df["Match Status"] == "Amd Only"].copy()
     balance_df  = detail_df[detail_df["AMD Balance"] > 0].copy()
 
+    denver_com = int((prompt_df["Visit Facility"] == "ART Denver").sum()) \
+        if "Visit Facility" in prompt_df.columns else 0
+    if denver_com:
+        print(f"  Note: {denver_com} commercial visit(s) at ART Denver — billed through "
+              "the Greeley office (expected, no action needed)")
+    if facility:
+        print(f"  Note: Prompt visits filtered to {facility}; AMD joins in full, so the "
+              "ghost-billing count is NOT meaningful in facility-filtered runs")
+
     return {
         "detail":   detail_df,
         "unbilled": unbilled_df,
@@ -280,6 +280,8 @@ def run_audit(start: str | None = None, end: str | None = None,
         "open_balance": balance_df,
         "amd_period1":  amd_period1,
         "stats": {
+            "denver_com":         denver_com,
+            "facility":           facility,
             "prompt_commercial":  len(prompt_df),
             "amd_total":          len(amd_df),
             "amd_period1":        len(amd_period1),
@@ -313,12 +315,22 @@ def _build_summary(result: dict, start: str | None, end: str | None) -> str:
         f"| Sep 2025–present | Prompt commercial visits | {s['prompt_commercial']:,} |",
         f"| Sep 2025–present | AMD billing records | {s['amd_period2']:,} |",
         "",
+        (f"_Note: {s['denver_com']} commercial visit(s) took place at ART Denver but are "
+         "billed through the Greeley office — this is expected (no commercial contracts "
+         "under the Denver entity) and not a flag._"
+         if s.get("denver_com") else
+         "_No commercial visits at ART Denver this period (commercial is billed through "
+         "Greeley only)._"),
+        "",
         "## Period 2 Reconciliation (Sep 2025+)",
         "| | Count |",
         "|---|---|",
         f"| ✅ Matched (Prompt + AMD) | {s['matched']:,} |",
         f"| ⚠️  Unbilled (Prompt, no AMD) | {s['unbilled']:,} |",
         f"| ❓ Ghost Billing (AMD, no Prompt) | {s['ghost']:,} |",
+        *([f"", f"_Prompt visits filtered to {s['facility']}; AMD joins in full, so the "
+           "ghost-billing count is not meaningful in this run._"]
+          if s.get("facility") else []),
         "",
         "## AMD Financial Summary (All Periods)",
         "| | Amount |",
@@ -405,8 +417,10 @@ def main():
     parser = argparse.ArgumentParser(description="Commercial Insurance Audit v2")
     parser.add_argument("--start", help="Start date YYYY-MM-DD (default: all)")
     parser.add_argument("--end",   help="End date YYYY-MM-DD (default: all)")
-    parser.add_argument("--facility", choices=sorted(AMD_FACILITY_OFFICE_KEYS),
-                        help="Filter to one facility (default: all)")
+    parser.add_argument("--facility", choices=FACILITIES,
+                        help="Filter Prompt visits to one facility (AMD always joins in "
+                             "full — commercial bills through Greeley regardless of "
+                             "visit location)")
     args = parser.parse_args()
 
     print("\n" + "=" * 60)
