@@ -69,3 +69,7 @@ data/*.json
 reports/
 art_data.duckdb
 backups/
+
+# Remote site data payload - published by Phase 4, not committed here
+# (site assets in remote_site/ itself ARE tracked, they contain no data)
+remote_site/data/

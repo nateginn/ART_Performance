@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ART Performance — Business KPI Report</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>ART Performance — Business KPI Report</h1>
+  <div id="bundle-meta" class="bundle-meta">Loading bundle…</div>
+</header>
+
+<main id="app" aria-busy="true">
+
+  <section id="load-error" class="banner banner-error" hidden></section>
+
+  <section class="panel" id="filters-panel">
+    <h2>Filters</h2>
+    <div class="filters-row">
+      <label>
+        Period type
+        <select id="period-type-select">
+          <option value="day">Day</option>
+          <option value="week">Week</option>
+          <option value="month" selected>Month</option>
+        </select>
+      </label>
+      <label>
+        Period
+        <select id="period-select"></select>
+      </label>
+      <label>
+        Facility
+        <select id="facility-select"></select>
+      </label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>New-Patient Counting — Read This First</h2>
+    <p class="explainer">
+      <strong>Unique New Patients</strong> is the headline figure: each newly-arrived
+      patient is counted exactly once, company-wide. <strong>New-Patient Visits</strong>
+      counts every provider/category a new patient was actually seen by on their first
+      day — it can be <em>higher</em> than Unique New Patients whenever one new patient
+      saw more than one provider or category the same day. New-Patient Visits is never a
+      count of unique patients and must never be summed across providers or categories
+      and presented as such.
+    </p>
+  </section>
+
+  <section class="panel" id="facility-panel">
+    <h2>Facility Comparison <span class="period-label" id="facility-period-label"></span></h2>
+    <div class="table-wrap">
+      <table id="facility-table">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <button type="button" class="download-btn" data-table="facility-table" data-name="facility_comparison">Download CSV</button>
+  </section>
+
+  <section class="panel" id="provider-panel">
+    <h2>Provider Comparison <span class="period-label" id="provider-period-label"></span></h2>
+    <div class="table-wrap">
+      <table id="provider-table">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <button type="button" class="download-btn" data-table="provider-table" data-name="provider_comparison">Download CSV</button>
+  </section>
+
+  <section class="panel" id="category-panel">
+    <h2>Visit Category Comparison <span class="period-label" id="category-period-label"></span></h2>
+    <div class="table-wrap">
+      <table id="category-table">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <button type="button" class="download-btn" data-table="category-table" data-name="category_comparison">Download CSV</button>
+  </section>
+
+  <section class="panel" id="payer-panel">
+    <h2>Payer Summary <span class="period-label" id="payer-period-label"></span></h2>
+    <div class="table-wrap">
+      <table id="payer-table">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <button type="button" class="download-btn" data-table="payer-table" data-name="payer_summary">Download CSV</button>
+  </section>
+
+  <section class="panel" id="financial-panel">
+    <h2>Financial KPIs (Monthly)</h2>
+    <div class="filters-row">
+      <label>
+        Month
+        <select id="financial-month-select"></select>
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table id="financial-table">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <button type="button" class="download-btn" data-table="financial-table" data-name="financial_summary">Download CSV</button>
+  </section>
+
+  <section class="panel" id="freshness-panel">
+    <h2>Data Freshness</h2>
+    <div class="table-wrap">
+      <table id="freshness-table">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel" id="downloads-panel">
+    <h2>Approved Bundle Downloads</h2>
+    <p class="explainer">
+      These are the same sanitized aggregate files this report is built from — no
+      row-level or patient-identifying data. Per-table CSV exports above reflect only
+      the currently filtered view.
+    </p>
+    <ul class="download-list">
+      <li><a href="data/bundle.json" download>bundle.json</a> — full sanitized aggregate bundle</li>
+      <li><a href="data/manifest.json" download>manifest.json</a> — schema version, freshness, checksums</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer class="foot">
+  Raw patient data never leaves the practice's local systems. This report contains
+  aggregate business KPIs only.
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
