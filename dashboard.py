@@ -90,7 +90,23 @@ def load_qb_pl_data():
 
 @st.cache_data(ttl=3600)
 def load_amd_data():
-    return None
+    try:
+        import db_cache as _dbc
+        con = _dbc.connect()
+        tables = {r[0] for r in con.execute(
+            "SELECT table_name FROM information_schema.tables"
+        ).fetchall()}
+        if "amd_billing" not in tables:
+            con.close()
+            return None
+        df = con.execute("SELECT * FROM amd_billing").df()
+        con.close()
+        if "DOS_key" in df.columns:
+            df["DOS_key"] = df["DOS_key"].astype(str)
+        return df
+    except Exception as e:
+        st.warning(f"Could not load AMD data: {e}")
+        return None
 
 
 def compute_monthly_collections(prompt_df, amd_df, month_str: str) -> dict:

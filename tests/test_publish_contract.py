@@ -83,6 +83,7 @@ def _clean_freshness_row(**overrides):
         "loaded_at": "2026-07-28T08:00:00Z",
         "age_days": 0.5,
         "verdict": "FRESH",
+        "source_period": "",
     }
     row.update(overrides)
     return row

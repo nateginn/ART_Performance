@@ -53,6 +53,10 @@ REPORT_TYPES = {
 load_dotenv(PROJECT_DIR / ".env")
 
 
+class SessionExpired(Exception):
+    pass
+
+
 def _screenshot(page, name):
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     path = DOWNLOAD_DIR / f"{name}.png"
@@ -176,13 +180,27 @@ def _set_all_time(page):
     page.wait_for_timeout(1_500)
 
 
-def download_report(start=None, end=None, all_time=False, headless=True, _retry_headed=True,
+def download_report(start=None, end=None, all_time=False, headless=True, retry_headed=True,
                     report_name=REPORT_NAME):
     """
     Download one report from the Downloads tab (default: Visits Revenue
     Report). report_name must match the row label exactly — see
     REPORT_TYPES for the supported ones. Returns the saved file path.
+
+    On session expiry a visible browser is opened for login. Unattended
+    callers pass retry_headed=False and handle SessionExpired themselves —
+    a scheduled run must never strand a browser window waiting for a click.
     """
+    try:
+        return _download_report_once(start, end, all_time, headless, report_name)
+    except SessionExpired:
+        if not retry_headed:
+            raise
+        print("Session expired — opening a visible browser window for login...")
+        return _download_report_once(start, end, all_time, False, report_name)
+
+
+def _download_report_once(start, end, all_time, headless, report_name):
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     downloads = []
 
@@ -192,11 +210,7 @@ def download_report(start=None, end=None, all_time=False, headless=True, _retry_
         if not _is_authenticated(page):
             if headless:
                 browser.close()
-                if not _retry_headed:
-                    raise RuntimeError("Session expired and headed login already failed")
-                print("Session expired — opening a visible browser window for login...")
-                return download_report(start, end, all_time, headless=False,
-                                       _retry_headed=False, report_name=report_name)
+                raise SessionExpired()
             _credential_login(page)
             SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
             SESSION_PATH.write_text(json.dumps(context.storage_state()), encoding="utf-8")

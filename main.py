@@ -1,6 +1,13 @@
 """
 ART Performance - Main CLI Entry Point
-Command-line interface for generating performance reports and analytics.
+Legacy command-line interface for generating performance reports and analytics.
+
+Deprecated: this CLI still routes through older Google Drive and legacy audit
+paths. Prefer the current local-first entry points:
+  - streamlit run dashboard.py
+  - python prompt_report_downloader.py --all-time --load
+  - python commercial_audit_v2.py
+  - python auto_audit.py
 """
 
 import argparse
@@ -11,13 +18,26 @@ from datetime import datetime, timedelta
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
+DEPRECATION_NOTICE = (
+    "LEGACY CLI NOTICE: `main.py` still uses older Google Drive and legacy audit paths.\n"
+    "Prefer: `streamlit run dashboard.py`, `python prompt_report_downloader.py --all-time --load`,\n"
+    "`python commercial_audit_v2.py`, and `python auto_audit.py`."
+)
+
 
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description='ART Performance - Clinic Financial Analysis & Reporting',
+        description='ART Performance - Legacy Clinic Financial Analysis & Reporting CLI',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+LEGACY CLI NOTICE
+  main.py is deprecated in favor of the local-first workflows:
+    streamlit run dashboard.py
+    python prompt_report_downloader.py --all-time --load
+    python commercial_audit_v2.py
+    python auto_audit.py
+
 Examples:
   python main.py --report executive
   python main.py --report full --start-date 2025-09-01 --end-date 2025-11-30
@@ -473,6 +493,9 @@ def _menu_run_cleanup() -> None:
 def main():
     """Main entry point."""
     args = parse_args()
+
+    if not args.quiet:
+        print(DEPRECATION_NOTICE + "\n")
     
     # Header
     if not args.quiet:

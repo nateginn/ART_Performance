@@ -14,6 +14,7 @@ Era model (see BUSINESS_RULES.md):
 
 Usage:
   python data_inventory.py [--out reports/data_inventory_YYYY-MM-DD.md]
+  python data_inventory.py --check
 """
 
 from __future__ import annotations
@@ -25,12 +26,16 @@ from datetime import datetime, timezone
 
 import duckdb
 
-sys.stdout.reconfigure(encoding="utf-8")
+import db_cache
+
+if sys.stdout is not None and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 DB_PATH = "art_data.duckdb"
 
 PROMPT_STALE_DAYS = 7
 AMD_STALE_DAYS = 35
+CHECK_REQUIRED_TABLES = {"prompt_visits", "amd_billing"}
 
 
 def _loaded_at(con, table: str):
@@ -103,9 +108,20 @@ def inspect(con) -> list[dict]:
             return f"STALE ({age:.0f}d old, service dates through {hi}) — {note}"
         return f"OK ({age:.0f}d old) — {note}"
 
-    def pl_verdict(n, lo, hi, age):
-        return ("RAW/UNPARSED format (header junk, unnamed columns) and stale — "
-                 "pending QuickBooks MCP loader redesign; not currently queryable")
+    def pl_verdict(table):
+        expected = db_cache.expected_pl_period()
+        expected_str = f"{expected[0]:04d}-{expected[1]:02d}"
+
+        def _verdict(n, lo, hi, age):
+            fresh_verdict, period = db_cache.pl_freshness_verdict(con, table)
+            if fresh_verdict == "FRESH":
+                return f"FRESH (source period {period}, policy requires {expected_str}+)"
+            if fresh_verdict == "STALE":
+                return (f"STALE (source period {period or 'unknown'}, policy requires "
+                         f"{expected_str}+) — export a fresh QuickBooks P&L")
+            return (f"UNKNOWN — could not detect a reporting-period header in {table} "
+                     "(RAW/UNPARSED format, header junk, unnamed columns)")
+        return _verdict
 
     def unc_verdict(n, lo, hi, age):
         return ("static reference list (UNC therapy patients for Campus Clinics "
@@ -113,8 +129,8 @@ def inspect(con) -> list[dict]:
 
     add("prompt_visits", "DOS_key", prompt_verdict)
     add("amd_billing", "DOS_key", amd_verdict)
-    add("greeley_pl", None, pl_verdict)
-    add("denver_pl", None, pl_verdict)
+    add("greeley_pl", None, pl_verdict("greeley_pl"))
+    add("denver_pl", None, pl_verdict("denver_pl"))
     add("unc_patients", "DOS_key", unc_verdict)
 
     return rows
@@ -145,9 +161,24 @@ def build_report(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def check_failures(rows: list[dict]) -> list[dict]:
+    failures = []
+    for row in rows:
+        if row["table"] not in CHECK_REQUIRED_TABLES:
+            continue
+        if "STALE" in row["verdict"] or "MISSING" in row["verdict"]:
+            failures.append(row)
+    return failures
+
+
 def main():
     parser = argparse.ArgumentParser(description="Database inventory + freshness report")
     parser.add_argument("--out", default=None)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Exit non-zero when required billing tables are stale or missing",
+    )
     args = parser.parse_args()
 
     con = duckdb.connect(DB_PATH, read_only=True)
@@ -161,6 +192,16 @@ def main():
         f.write(report)
     print(report)
     print(f"\nSaved: {out_path}")
+
+    if args.check:
+        failures = check_failures(rows)
+        if failures:
+            print("\nCHECK FAILED:")
+            for row in failures:
+                print(f"- {row['table']}: {row['verdict']}")
+            sys.exit(1)
+        print("\nCHECK PASSED: required billing tables are fresh enough.")
+        sys.exit(0)
 
 
 if __name__ == "__main__":

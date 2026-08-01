@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 
 import duckdb
 
+import db_cache
 import publish_manifest
 import publish_schema as schema
 import publish_scanner as scanner
@@ -574,7 +575,17 @@ def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
     _cache_meta. Reports on every known table (not just the ones this
     exporter queries) so the bundle gives a full freshness picture. Carries
     no date range, no min/max DOS — only a categorical verdict, an age in
-    days, and a row count, per the Phase 1 contract's freshness schema."""
+    days, a row count, and (for greeley_pl/denver_pl only) the latest
+    reporting-period label actually found in the file's own content, per
+    the Phase 1 contract's freshness schema.
+
+    greeley_pl/denver_pl are deliberately NOT judged by age_days like
+    prompt_visits/amd_billing: reloading the identical, still-March file
+    would reset loaded_at to "now" and make genuinely stale P&L data look
+    fresh by an age-based rule. db_cache.pl_freshness_verdict() instead
+    checks what reporting month is actually present in the file against the
+    last-closed-calendar-month policy (db_cache.expected_pl_period),
+    independent of when it was last touched locally."""
     tables_present = {r[0] for r in con.execute(
         "SELECT table_name FROM information_schema.tables"
     ).fetchall()}
@@ -596,6 +607,7 @@ def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
                 "loaded_at": now.isoformat(),
                 "age_days": 0.0,
                 "verdict": "MISSING",
+                "source_period": "",
             })
             continue
 
@@ -609,6 +621,7 @@ def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
                 "loaded_at": now.isoformat(),
                 "age_days": 0.0,
                 "verdict": "UNKNOWN",
+                "source_period": "",
             })
             continue
 
@@ -617,11 +630,16 @@ def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
             loaded_at = loaded_at.replace(tzinfo=timezone.utc)
         age_days = (now - loaded_at).total_seconds() / 86400.0
 
-        stale_limit = _FRESHNESS_STALE_DAYS.get(table_name)
-        if stale_limit is not None:
-            verdict = "STALE" if age_days > stale_limit else "FRESH"
+        source_period = ""
+        if table_name in db_cache.PL_TABLES:
+            verdict, period = db_cache.pl_freshness_verdict(con, table_name)
+            source_period = period or ""
         else:
-            verdict = "OK"
+            stale_limit = _FRESHNESS_STALE_DAYS.get(table_name)
+            if stale_limit is not None:
+                verdict = "STALE" if age_days > stale_limit else "FRESH"
+            else:
+                verdict = "OK"
 
         out.append({
             "schema_version": schema.SCHEMA_VERSION,
@@ -630,6 +648,7 @@ def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
             "loaded_at": loaded_at.isoformat(),
             "age_days": round(age_days, 2),
             "verdict": verdict,
+            "source_period": source_period,
         })
     return out
 

@@ -1,0 +1,10 @@
+{
+  "host": "REPLACE_WITH_DROPLET_HOST_OR_IP",
+  "port": 22,
+  "username": "REPLACE_WITH_DEDICATED_DEPLOY_ACCOUNT",
+  "private_key_path": "REPLACE_WITH_PATH_TO_DEPLOY_PRIVATE_KEY",
+  "host_key_fingerprint": "SHA256:REPLACE_WITH_PINNED_HOST_KEY_FINGERPRINT",
+  "remote_dir": "REPLACE_WITH_REMOTE_DATA_DIR",
+  "retries": 3,
+  "retry_backoff_seconds": 5
+}

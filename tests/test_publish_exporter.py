@@ -614,6 +614,130 @@ def test_financial_summary_computed_from_pl_shape(bundle):
         assert row["net_income"] == pytest.approx(4000.0)
 
 
+# ---------------------------------------------------------------------------
+# build_freshness() — real content-based P&L verdicts, not age/loaded_at
+# ---------------------------------------------------------------------------
+
+def _pl_period_label(year, month):
+    month_name = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ][month - 1]
+    return f"{month_name} {year}"
+
+
+def _con_with_pl_cache_meta(month_label, loaded_at="2020-01-01T00:00:00+00:00"):
+    """A synthetic DB with prompt_visits + greeley_pl/denver_pl carrying the
+    given month header, plus a _cache_meta row for each P&L table (the
+    shared `con`/`bundle` fixtures above don't set this, so build_freshness()
+    falls into the pre-existing "loaded_at unknown -> UNKNOWN" branch before
+    ever reaching the new P&L-specific logic - these tests need a real
+    loaded_at to actually exercise it)."""
+    import db_cache as _db_cache
+
+    con = duckdb.connect(":memory:")
+    con.execute(PROMPT_VISITS_DDL)
+    con.executemany(
+        'INSERT INTO prompt_visits VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+        SYNTHETIC_VISITS,
+    )
+    for table in _db_cache.PL_TABLES:
+        con.execute(PL_DDL_TEMPLATE.format(table=table))
+        con.executemany(f'INSERT INTO {table} VALUES (?,?)', [
+            (None, month_label),
+            ("Total for Income", "10000.00"),
+            ("Total for Expenses", "6000.00"),
+            ("Net Income", "4000.00"),
+        ])
+    con.execute('''
+        CREATE TABLE _cache_meta (
+            table_name VARCHAR, drive_file_id VARCHAR,
+            drive_modified_time VARCHAR, loaded_at VARCHAR
+        )
+    ''')
+    con.execute(
+        "INSERT INTO _cache_meta VALUES ('prompt_visits', NULL, NULL, ?)",
+        [__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()],
+    )
+    for table in _db_cache.PL_TABLES:
+        con.execute(
+            "INSERT INTO _cache_meta VALUES (?, 'fid', 'mtime', ?)",
+            [table, loaded_at],
+        )
+    return con
+
+
+def test_freshness_reports_stale_pl_when_period_is_old():
+    con = _con_with_pl_cache_meta("March 2020")
+    try:
+        rows = exporter.build_freshness(con)
+    finally:
+        con.close()
+    pl_rows = {r["table_name"]: r for r in rows if r["table_name"] in ("greeley_pl", "denver_pl")}
+    assert pl_rows["greeley_pl"]["verdict"] == "STALE"
+    assert pl_rows["greeley_pl"]["source_period"] == "2020-03"
+    assert pl_rows["denver_pl"]["verdict"] == "STALE"
+
+
+def test_freshness_reports_fresh_pl_when_period_meets_policy():
+    import db_cache as _db_cache
+    year, month = _db_cache.expected_pl_period()
+    con = _con_with_pl_cache_meta(_pl_period_label(year, month))
+    try:
+        rows = exporter.build_freshness(con)
+    finally:
+        con.close()
+    pl_rows = {r["table_name"]: r for r in rows if r["table_name"] in ("greeley_pl", "denver_pl")}
+    assert pl_rows["greeley_pl"]["verdict"] == "FRESH"
+    assert pl_rows["greeley_pl"]["source_period"] == f"{year:04d}-{month:02d}"
+
+
+def test_reloading_same_stale_pl_file_does_not_reset_freshness_in_build_freshness():
+    """The exact bug this feature exists to prevent, exercised through the
+    real exporter entrypoint (not just db_cache directly): bumping loaded_at
+    to "now" (as force=True reloading an unchanged file would) must not turn
+    a stale March file FRESH just because it was touched recently."""
+    con = _con_with_pl_cache_meta("March 2020", loaded_at="2020-01-01T00:00:00+00:00")
+    try:
+        stale_rows = exporter.build_freshness(con)
+        now_iso = __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc
+        ).isoformat()
+        con.execute(
+            "UPDATE _cache_meta SET loaded_at = ? WHERE table_name = 'greeley_pl'",
+            [now_iso],
+        )
+        reloaded_rows = exporter.build_freshness(con)
+    finally:
+        con.close()
+
+    def _pl(rows):
+        return next(r for r in rows if r["table_name"] == "greeley_pl")
+
+    assert _pl(stale_rows)["verdict"] == "STALE"
+    assert _pl(reloaded_rows)["verdict"] == "STALE"  # unchanged despite fresh loaded_at
+    assert _pl(reloaded_rows)["age_days"] < 1  # loaded_at really did move...
+    assert _pl(reloaded_rows)["source_period"] == "2020-03"  # ...but the verdict didn't
+
+
+def test_bundle_with_real_pl_freshness_still_passes_scanner_clean():
+    con = _con_with_pl_cache_meta("March 2020")
+    try:
+        bundle = exporter.build_bundle(con)
+    finally:
+        con.close()
+    result = publish_scanner.scan_bundle(bundle)
+    assert result.violations == []
+    freshness_periods = [r["source_period"] for r in bundle["freshness"]]
+    assert "2020-03" in freshness_periods
+    # non-PL tables must carry the empty-string not-applicable sentinel
+    non_pl_periods = [
+        r["source_period"] for r in bundle["freshness"]
+        if r["table_name"] not in ("greeley_pl", "denver_pl")
+    ]
+    assert all(p == "" for p in non_pl_periods)
+
+
 def test_null_financial_fields_are_counted_for_visibility_not_hidden(con):
     con.execute(
         "INSERT INTO prompt_visits VALUES "

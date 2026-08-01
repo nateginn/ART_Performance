@@ -57,6 +57,10 @@ master_patient_list.json
 art_config.json
 .env
 
+# Phase 4 publish credentials/connection details - never commit
+# (publish_config.example.json is the tracked template)
+publish_config.json
+
 # Prompt EMR session + downloaded reports (may contain PHI)
 data/prompt_emr_session.json
 data/emr_downloads/

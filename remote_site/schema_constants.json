@@ -93,6 +93,7 @@
       "loaded_at": "timestamp",
       "row_count": "count",
       "schema_version": "schema_version",
+      "source_period": "pl_period",
       "table_name": "table_name",
       "verdict": "freshness_enum"
     },

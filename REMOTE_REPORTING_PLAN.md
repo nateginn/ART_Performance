@@ -30,9 +30,16 @@ Tailscale remains installed and active on the Windows PC for RDP, private admini
 - `ask.py` default: Anthropic Claude API with aggregated summaries only
 - Existing deployment reference: `D:\Dev\dual-agent-core\HISTORY.md`
 - Existing UNC deployment source: `D:\Dev\UNC-billing-Audit-25-26`
-- Proposed public path: `https://acceleratedrehabtherapy.com/art-reports/`
+- Existing hosting decision: reuse the DigitalOcean droplet currently named
+  `art2025-website`, which currently receives both the IPv4 address
+  `146.190.174.50` and IPv6 address `2604:a880:4:1d0::adf4:0` for
+  `acceleratedrehabtherapy.com` through Cloudflare.
+- Existing UNC route: `https://acceleratedrehabtherapy.com/unc-reports/`
+- ART reporting route: `https://acceleratedrehabtherapy.com/art-reports/`
 
-Do not assume the proposed URL, server path, credentials, Cloudflare configuration, or deployment account. Inspect the existing UNC deployment and verify all values without printing secrets.
+Do not assume the server filesystem paths, credentials, Cloudflare configuration,
+or deployment account. Inspect the existing UNC deployment before modifying the
+shared droplet, and verify all values without printing secrets.
 
 ## Non-negotiable constraints
 
@@ -218,28 +225,93 @@ The daily Prompt pull remains on Windows. Publication should occur only after su
 
 Run `/codex-review` and obtain `PASS` before Phase 5.
 
-## Phase 5 — Implement the remote service
+## Execution checkpoint — 2026-07-30
 
-On DigitalOcean, following the existing UNC pattern:
+Phase 4's real infrastructure prerequisites were provisioned on the existing
+`art2025-website` droplet rather than a new droplet. The dedicated `artreports` chrooted SFTP
+account, pinned SSH host key, `/publish/data` path, static viewer, separate ART Basic Auth,
+and nginx `/art-reports/` locations are working. A real non-dry-run publish succeeded, and
+unauthenticated requests to the ART page/data paths returned `401`; the existing `/unc-reports/`
+route also returned `401`. See the detailed record in `REMOTE_REPORTING_STATUS.md` before
+continuing. Automated publication, Cloudflare cache verification, final review, and the
+operations handoff remain outstanding.
 
-- Create a dedicated service user.
-- Create an isolated application directory.
+## Phase 5 — Implement the remote service on the existing ART website droplet
+
+On the existing `art2025-website` DigitalOcean droplet, following the existing
+UNC deployment pattern while keeping the two applications isolated:
+
+- Preserve `/unc-reports/` and its current service, files, authentication, and
+  nginx behavior.
+- Create a dedicated ART deployment/service account; never reuse the UNC account
+  or its credentials.
+- Create an isolated ART application directory and a separate sanitized-data
+  directory.
 - Install only required dependencies.
-- Create a systemd service with automatic restart and startup.
-- Bind the application to localhost only.
-- Expose it through nginx under `/art-reports/`.
+- Serve the Phase 3 static site under `/art-reports/` through nginx. Do not add a
+  server-side API, raw-data endpoint, upload endpoint, or debug endpoint.
+- Keep the routine SFTP publisher limited to `bundle.json` and `manifest.json`;
+  deploy `schema_constants.json` with the static site assets when its generated
+  output changes.
 - Use Cloudflare HTTPS.
-- Do not expose the application port directly.
-- Do not alter or break `/unc-reports/`.
+- Do not expose any origin port directly.
+- Test that `/unc-reports/` remains unchanged after every nginx/configuration
+  modification.
 
 Authentication requirements:
 
 - Prefer Cloudflare Access with MFA.
 - If nginx Basic Auth is used temporarily, document it as an interim control and do not reuse credentials from the UNC deployment.
 - Never put credentials in source, logs, the plan, or the final report.
-- Verify unauthorized requests receive 401/403.
+- Verify unauthorized requests receive 401/403 for the HTML page, JSON data,
+  schema constants, and download paths.
+- Add `X-Robots-Tag: noindex, nofollow, noarchive` and an HTML `noindex` directive
+  as defense-in-depth. This reduces search indexing but is not treated as an
+  authentication control.
+- Configure `Cache-Control: private, no-store` and an explicit Cloudflare cache
+  bypass for the `/art-reports/` path and its data files.
 
 Run `/codex-review` and obtain `PASS` before Phase 6.
+
+## Execution checkpoint — Phase 5 verification (2026-07-30)
+
+The Phase 5 infrastructure listed above was built manually earlier the same day (see the
+"Execution checkpoint — 2026-07-30" note above and the implementation record in
+`REMOTE_REPORTING_STATUS.md`). This checkpoint records an independent verification pass against
+this phase's own checklist, run the same day: external HTTPS probing (no credentials used) plus
+a read-only SSH pass against the droplet (owner-approved for this session after the sandbox
+initially blocked it as a shared-production-system action). Coexistence with `/unc-reports/` is
+confirmed — an `nginx` config diff against the pre-ART backup shows only additive `/art-reports*`
+locations, both routes still 401 unauthenticated with distinct realms, and no new systemd
+service was added. Three transport-security findings were surfaced and are recorded, not fixed,
+in `REMOTE_REPORTING_STATUS.md`'s "Phase 5 — Remote service verification" section: no TLS
+listener exists on the origin at all (Cloudflare terminates TLS and forwards over plain HTTP),
+no HTTP→HTTPS redirect is enforced for the domain, and the origin's port 80 is directly
+reachable bypassing Cloudflare (Basic Auth still gates it — no PHI/data-boundary leak, but
+Cloudflare's edge protections are bypassable for the login surface). All three are whole-droplet
+changes shared with the main website and UNC, so none were fixed unilaterally during this
+verification pass — they were recorded as open findings and put to `/codex-review`, which
+**APPROVED Phase 5 after 3 rounds** (see `PLAN-REVIEW-LOG.md`), independently confirming none of
+the three findings bypass Basic Auth or the PHI/data-sanitization boundary. They remain open as
+owner-risk decisions, not fixed, and Phase 6 may now begin per the plan's phase-gating rule.
+
+## Execution checkpoint — Phase 5 transport-security hardening (2026-07-30)
+
+Per explicit owner direction, the three transport-security findings recorded in the Phase 5
+verification checkpoint above were acted on: origin TLS was added using an already-issued,
+auto-renewing Let's Encrypt certificate that existed on the droplet but was never wired into
+nginx; an HTTP→HTTPS redirect keyed on `X-Forwarded-Proto` (not `$scheme`, to remain correct
+regardless of Cloudflare's SSL/TLS mode) was added and verified not to break `certbot renew
+--dry-run`; and the origin's firewall was restricted to Cloudflare's published IPv4/IPv6 ranges
+plus SSH, verified both by external probing (direct-IP requests now time out) and by a live
+`tcpdump` capture on the droplet showing a real non-Cloudflare SYN receiving no response. All
+three main services (public website, `/unc-reports/`, `/art-reports/`) were re-verified working
+correctly after every change, over both HTTP (redirecting) and HTTPS, and SSH admin access was
+confirmed intact throughout. Full detail, including one honestly-recorded investigation
+dead-end, is in `REMOTE_REPORTING_STATUS.md`'s "Phase 5 — Transport-security hardening
+(2026-07-30)" entry. One item from the original three-point ask remains open and requires owner
+action: Cloudflare's SSL/TLS mode itself (recommend Full (strict)) could not be read or changed
+without dashboard/API access, which was not available this session.
 
 ## Phase 6 — Integrate publication with the Windows pipeline
 
@@ -257,6 +329,65 @@ Requirements:
 - Preserve the last successful remote bundle on failure.
 
 Run `/codex-review` and obtain `PASS` before Phase 7.
+
+## Execution checkpoint — Phase 6 publication integration (2026-07-30)
+
+Reviewed `publish_exporter.export()` and `publish_uploader.publish()` (Phases 2 and 4, both
+already `/codex-review`-approved) before writing anything, and found nearly every Phase 6
+requirement — fail-closed freshness/sanitization gates, no partial-bundle writes, bounded
+retries, preserve-last-good-on-failure, PHI-free logging — already implemented there. Added a
+small new orchestrator, `publish_after_pull.py`, that calls the two in order, never raises back
+to its caller, and logs outcomes to a dedicated PHI-free log file. Wired it into
+`scheduled_pull.py` (the `ARTPromptPull` scheduled task's script) immediately after a successful
+pull, inside its own exception handler so a publication bug can never turn a successful pull into
+a failed scheduled task. Two rounds of `/codex-review` (see `PLAN-REVIEW-LOG.md`) found the
+"never raises" guarantee wasn't fully enforced and that raw exception text could leak into the
+new log file and its Telegram notification via `publish_scanner.Violation`'s own `repr()`
+formatting — both fixed, closing with zero `logger.exception()` calls anywhere in the module.
+10 tests (`tests/test_publish_after_pull.py`, up from an initial 6); full suite
+`pytest tests/ -q` → 220 passed, no regressions. Ran a real (non-mocked) end-to-end
+verification against production — actual `art_data.duckdb`, actual `publish_config.json` —
+three times across the review rounds, each exporting and publishing a fresh bundle to the live
+droplet in one attempt, independently confirmed
+via `stat` on the droplet's own copy of `bundle.json`/`manifest.json`. Full detail, including one
+bug the real run caught (a cosmetic wrong-dict-key in a log line) and what's deliberately still
+unverified (the actual 08:00 scheduled-task trigger hasn't fired yet under this change), is in
+`REMOTE_REPORTING_STATUS.md`'s "Phase 6 — Publication integration (2026-07-30)" entry.
+
+### Scheduled-trigger verification update
+
+The first scheduled trigger was subsequently observed at 08:00 on 2026-07-30, but the Prompt
+session had expired. The task returned result 1 and correctly did not publish. The task remains
+installed and ready; owner interaction is required to refresh the Prompt session, after which a
+successful scheduled pull-to-publication run must be verified. The full suite result is 220
+passed, correctly described as 210 pre-existing tests plus 10 new publication-integration tests.
+
+The owner subsequently completed the interactive Prompt verification on 2026-07-30. The
+pull downloaded 4,877 rows and loaded them into `prompt_visits`; a second headless pull then
+completed without requiring another human-verification interaction. Publication was run after
+the refreshed data and succeeded twice, with the final bundle reporting `visits_kpi=3522` and
+`payer_procedure_summary=1366`. The next 08:00 Task Scheduler run remains the final proof of
+the unattended pull-to-publication chain.
+
+### Interactive fallback update
+
+The scheduled pull now tries headless first and, specifically on `SessionExpired`, starts one
+visible bounded interactive retry using `pythonw.exe`. The interactive subprocess performs its
+own `--load`, so a successful retry is published directly without a duplicate headless pull.
+Failure or timeout sends the existing notification and stops before publication. The retry is
+limited to 900 seconds and kills its process tree on timeout. Added 9 focused tests; the full
+suite now passes **229 tests**. The next scheduled run remains the final real-world verification
+of this fallback through Task Scheduler.
+
+### Forced scheduled-chain verification update
+
+The first forced `ARTPromptPull` run exposed a real `pythonw.exe` compatibility defect before
+publication: importing `auto_audit.py` called `sys.stdout.reconfigure()` when Task Scheduler
+provided `sys.stdout=None`. The pull succeeded but publication was safely skipped. The code now
+guards stdout/stderr reconfiguration, with a regression test in `tests/test_headless_import.py`.
+The full suite passes **230 tests**. A second forced scheduled run completed the real pull-to-
+publication chain, returned Task Scheduler result `0`, and left the task `Ready`; the next
+scheduled run is 2026-07-31 at 08:00.
 
 ## Phase 7 — End-to-end verification and security audit
 
@@ -293,6 +424,61 @@ Verify Tailscale coexistence:
 
 Run `/codex-review` and obtain `PASS` before Phase 8.
 
+**Scope note, added 2026-07-30 during Phase 7 execution (a `/codex-review` round asked for this
+to be made explicit here, not only in the checkpoint below):** "No raw endpoint exists," "No raw
+file can be downloaded," and "Nginx, systemd, and application logs contain no PHI" were verified
+for the project-owned `/art-reports*` surface and the shared nginx-level access/error logs and
+systemd journal (which log every request to every route on the domain, including UNC's and
+Django's). They were **not** independently verified against the pre-existing UNC gunicorn
+application's or the Django application's own internal routing or application-level log output —
+both are pre-existing systems this project didn't build and isn't authorized to deep-audit, and
+UNC's app in particular is documented elsewhere in this project's history as already exposing an
+unrelated `/reload` debug endpoint on its own auth. This project's data boundary claim is scoped
+to what it built and controls (the sanitized ART bundle and its serving path), not a claim about
+the security posture of the pre-existing applications it shares a droplet with.
+
+## Execution checkpoint — Phase 7 end-to-end verification (2026-07-30)
+
+Ran the full Phase 7 checklist against the real, live system rather than assuming prior phases'
+own verification still held. Every check that doesn't depend on the owner's Prompt EMR login or
+the real ART Basic Auth password passed with fresh evidence: `pytest tests/ -q` → 220 passed; the
+real, currently-published bundle/manifest **and the real `.previous` fallback generation** (added
+after a `/codex-review` round asked for it, rather than trusting a size/JSON-validity check)
+re-verified clean against both `publish_manifest.verify_manifest()` and
+`publish_scanner.scan_bundle()`; an exhaustive enumeration of the droplet's nginx config (all 8
+location blocks) confirmed no raw endpoint exists anywhere under `/art-reports*` specifically —
+scoped deliberately to what this project built (a pure static-file surface, no backend
+application), not extended to the pre-existing Django/UNC apps' own internal routing, which
+nginx's config can't prove either way and which this session didn't audit (a `/codex-review`
+round correctly caught an earlier, overbroad "no raw endpoint exists anywhere on the domain"
+draft of this claim — this domain's own UNC app is separately documented elsewhere in this
+project as exposing an unrelated `/reload` debug endpoint, which is exactly why the narrower
+scoping matters) — plus a full SFTP-chroot directory listing confirmed no raw file exists
+anywhere; nginx/systemd/publication logs sampled (not exhaustively grepped) contain no
+PHI; `ask.py` confirmed to keep Ollama local and send Claude only two aggregate SQL summaries;
+`dashboard.py` still imports and runs its real data-loading logic against the live DuckDB;
+`/unc-reports/` and the main site unaffected; direct-IP access still blocked on both ports;
+Tailscale IP unchanged, Funnel/Serve both off, Windows configured to accept RDP (no actual session
+test-connected — no remote client was available this session).
+
+**Three items explicitly not claimed complete, per the task's own instruction not to overclaim —
+a `/codex-review` round pushed back on treating two of these as more resolved than they were,
+and both were corrected rather than argued away:**
+1. The real scheduled-task pull→publish end-to-end path. `data/scheduled_pull.log` shows three
+   consecutive `SessionExpired` failures (2026-07-28/29/30, each correctly notified, each
+   correctly stopping before the publish step ever ran). Every successful publish so far has been
+   a direct manual run, not a scheduled-task trigger. Owner action required: refresh the Prompt
+   EMR session interactively (RDP in, run the manual download command, verify+log in).
+2. A fresh authenticated-viewer check. This session relied on Phase 5's original interactive
+   login as continuity evidence rather than a fresh Phase 7 check, per the established
+   no-real-credentials-in-automation policy. Concrete owner ask, ~2 minutes: log into
+   `/art-reports/`, confirm the KPI tables and freshness header render, click one CSV download.
+3. Cloudflare's SSL/TLS mode (recommend Full (strict)) — unchanged from Phase 5, still requires
+   owner dashboard access this project doesn't have.
+
+Full detail in `REMOTE_REPORTING_STATUS.md`'s "Phase 7 — End-to-end verification and security
+audit (2026-07-30)" entry.
+
 ## Phase 8 — Operations handoff
 
 Produce a final operator guide containing:
@@ -321,6 +507,32 @@ The final report must explicitly state:
 - No Funnel or public Tailscale Serve was used.
 - The existing UNC deployment remains functional.
 - Any unresolved risk or unperformed test.
+
+## Post-deployment cleanup recommendation
+
+## Approved reporting enhancement — independent service comparison
+
+The owner approved adding a separate service-level comparison to the remote report. This must
+not be inferred from the current payer/category table, because the current category mapping
+combines payer context and visit-type labels and consequently places `AUTO Massage` in
+`Other`, while `COM Massage` and `WC Massage` appear under payer categories.
+
+The new aggregate service dimension should expose an explicit allowlist:
+
+- `Physical Therapy`
+- `Chiropractic`
+- `Massage`
+- `Acupuncture`
+- `Shockwave`
+- `Other`
+
+The service comparison should support the same safe period, facility, and provider rollups as
+the existing KPI tables where the source data supports them. It must remain aggregate-only,
+preserve the existing payer/category tables, and never publish raw Visit Type text. Add tests
+for `AUTO Massage`, `COM Massage`, `WC Massage`, acupuncture, chiropractic, and shockwave
+classification before publication. This enhancement is approved as a future implementation
+task; it does not authorize changing the current live bundle without a reviewed exporter,
+scanner, manifest, and viewer update.
 
 ## Post-deployment cleanup recommendation
 

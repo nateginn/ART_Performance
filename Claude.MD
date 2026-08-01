@@ -133,6 +133,15 @@ Facility filter: exclude `139591 - CAMPUS CLINICS` (per BUSINESS_RULES.md).
 
 ---
 
+### Phase 7 - Remote Access
+
+- Tailscale is installed and connected on the Windows host at `100.96.115.56` (`jimmy`).
+- The Streamlit dashboard is supervised by `start_dashboard.bat` and registered as the `ARTDashboard` logon task.
+- Dashboard inbound access is restricted to the Tailscale CGNAT range `100.64.0.0/10`; Funnel and public serving are prohibited.
+- A deny rule blocks TCP 8501 from RFC1918 private ranges as an additional LAN safeguard.
+- The relocated `streamlit.exe` launcher exits immediately on this host, so the supervisor invokes `venv\Scripts\python.exe -m streamlit` by full path.
+- RDP is used when Prompt EMR requires an interactive login or verification step.
+
 ## Architecture Constraints
 - Single user (Nate), local machine (Windows 11, RTX 4090, Python 3.13 global)
 - Venv at `venv/` — always activate before running scripts
@@ -211,3 +220,117 @@ ART_Performance/
 | `denver_pl` | QuickBooks P&L Drive CSV | `python db_cache.py` |
 | `amd_billing` | AMD commercial billing export (local file) | `python db_cache.py --amd-billing FILE` or dashboard upload |
 | `unc_patients` | Practice Fusion Chart Notes CSV (SOAP Notes only) | `python db_cache.py --unc-notes FILE` or dashboard Tab 3 upload |
+## Remote reporting deployment status — 2026-07-30
+
+The sanitized ART KPI report is deployed at:
+
+`https://acceleratedrehabtherapy.com/art-reports/`
+
+This is a static client-side report viewer. The existing `art2025-website` DigitalOcean
+droplet is shared with the website and the existing UNC reports deployment. The ART route is
+isolated under `/art-reports/`; do not change or replace the existing `/unc-reports/` route.
+
+Deployment architecture:
+
+- Windows remains the PHI boundary and source of truth.
+- `publish_exporter.py` creates the sanitized aggregate bundle locally.
+- `publish_uploader.py` publishes only `bundle.json` and `manifest.json` over SFTP.
+- The dedicated `artreports` Linux account is chrooted to `/var/lib/art-reports-sftp` and has
+  no shell, no password authentication, no TTY, and no forwarding.
+- Nginx serves the static viewer from `/var/www/art-reports/` and the data files from the
+  SFTP publication directory.
+- The ART route has its own nginx Basic Auth file, `/etc/nginx/.art-reports-htpasswd`.
+  Never reuse the UNC Basic Auth credentials and never put credentials in this repository.
+- The deployed route and data paths return `401 Unauthorized` without authentication. The
+  existing `/unc-reports/` route also returned `401` in the unauthenticated regression test.
+- The public route is independent of Tailscale. Tailscale remains available for private RDP
+  and administration; Funnel and public `tailscale serve` are prohibited.
+
+Infrastructure facts:
+
+- Droplet: `art2025-website`
+- IPv4: `146.190.174.50`
+- IPv6: `2604:a880:4:1d0::adf4:0`
+- Domain: `acceleratedrehabtherapy.com`
+- SFTP user: `artreports`
+- Windows private key path: `C:\Users\growy\.ssh\art_reports_deploy` (key contents are
+  private and must never be documented or pasted)
+- SSH host-key fingerprint: `SHA256:HHK5BHG4kUjxI40eXMqy4wcnLxSacfL84LwzXCNRaco`
+
+Completed deployment actions:
+
+1. Confirmed the existing droplet and nginx/UNC layout before changing anything.
+2. Backed up `/etc/nginx/sites-available/unc-billing` before adding the ART locations.
+3. Created and tested the restricted `artreports` SFTP account.
+4. Created the local ignored `publish_config.json` with the pinned host fingerprint and
+   remote directory `/publish/data`.
+5. Ran a successful uploader dry run followed by a successful real publish.
+6. Installed `index.html`, `app.js`, `style.css`, and `schema_constants.json` under
+   `/var/www/art-reports/`.
+7. Created separate ART Basic Auth and added the `/art-reports/` nginx locations.
+8. Added `X-Robots-Tag: noindex, nofollow, noarchive`, `Cache-Control: private, no-store`,
+   and disabled directory indexing on the ART locations.
+9. Validated nginx syntax and reloaded nginx without changing the UNC service.
+10. Logged into the viewer and confirmed filters, KPI tables, freshness, and CSV download.
+
+Verification results:
+
+- Unauthenticated requests to the ART page, manifest, schema constants, and existing UNC
+  route all returned `401`.
+- The authenticated viewer displayed real aggregate provider, facility, category, payer,
+  financial, and freshness sections.
+- A downloaded category CSV contained only aggregate fields and no patient identifiers.
+- No raw DuckDB file, downloaded export, or row-level file was uploaded.
+
+Remaining work:
+
+- Integrate publication with the successful daily pull without interfering with
+  `ARTPromptPull` or `ARTDashboard`.
+- Confirm/configure the Cloudflare cache bypass for `/art-reports/` and data paths.
+- Complete final remote/security regression tests and required `/codex-review` gates.
+- Write the Phase 8 operator handoff and rollback instructions.
+- Do not delete project files, bundles, or data artifacts.
+
+Approved next reporting enhancement:
+
+- Add a separate aggregate Service Comparison, distinct from the payer/category comparison.
+- Its allowlisted values are `Physical Therapy`, `Chiropractic`, `Massage`, `Acupuncture`,
+  `Shockwave`, and `Other`.
+- This is required because `AUTO Massage` currently falls into `Other`, while `COM Massage`
+  and `WC Massage` are currently represented by payer categories.
+- Do not publish raw Visit Type values. Update exporter, schema/scanner, manifest, tests, and
+  the static viewer together, then review before replacing the live bundle.
+
+Read `REMOTE_REPORTING_STATUS.md` first, then `REMOTE_REPORTING_PLAN.md` and
+`PLAN-REVIEW-LOG.md` before making further infrastructure changes.
+
+## MMC monitoring (read-only)
+
+As of 2026-08-01, `D:\Dev\MMC` (Marketing Mission Control, Nate's cross-project
+shared brain / daily conductor) monitors this project as a Tier-0,
+strictly-read-only source. MMC never executes any script here, never runs
+git write commands here, and never touches PHI.
+
+What MMC's daily collector reads, and nothing else:
+- `reports/publish_bundle/manifest.json` — allowlisted metadata fields only
+  (schema versions, generated_at, reporting period, report row counts,
+  source-table freshness verdicts). Never `bundle.json` (the actual
+  sanitized report content).
+- `reports/publish_log.jsonl` — the last line only, allowlisted fields
+  (success/dry_run/generated_at/attempts/error_code/error_type).
+- Task Scheduler state for `ARTPromptPull` (`schtasks /query`).
+- `git status`/`rev-parse` here — counts only (dirty/untracked counts),
+  never filenames or diff content.
+- Unauthenticated HTTP status/header checks against
+  `https://acceleratedrehabtherapy.com/art-reports/` and its
+  `data/manifest.json` — confirms the auth boundary (expects 401 + a Basic
+  challenge), sends no credentials, never reads the response body.
+
+Never read by MMC: `master_patient_list.json`, `art_data.duckdb`, `.env`,
+`data/emr_downloads/`, `bundle.json`, or either plain-text operational log
+(`data/publish_after_pull.log`, `data/scheduled_pull.log`).
+
+Design record: `D:\Dev\MMC\PLAN-ART-PERFORMANCE.md` and
+`D:\Dev\MMC\PLAN-REVIEW-LOG-ART-PERFORMANCE.md` (a 3-round Codex-reviewed
+plan covering the PHI boundary decisions above in detail). This section is
+the only thing MMC ever writes in this repository.

@@ -876,17 +876,28 @@ function renderFinancial() {
 }
 
 function renderFreshness() {
+  // source_period lives on the bundle's own freshness rows, not the
+  // manifest's lighter-weight source_table_freshness summary - looked up
+  // by table_name rather than switching the table's row source, so the
+  // manifest's existing verdict/age_days summary stays the source of truth
+  // for those two columns.
+  const periodByTable = {};
+  for (const r of state.bundle.freshness || []) {
+    periodByTable[r.table_name] = r.source_period;
+  }
   const rows = state.manifest.source_table_freshness.slice().sort((a, b) =>
     a.table_name.localeCompare(b.table_name)
   );
   const table = document.getElementById("freshness-table");
   table.querySelector("thead").innerHTML =
-    "<tr><th>Table</th><th>Status</th><th>Age (days)</th></tr>";
-  table.querySelector("tbody").innerHTML = rows.map((r) =>
-    `<tr><td>${escapeHtml(r.table_name)}</td>` +
-    `<td class="verdict-${escapeHtml(r.verdict)}">${escapeHtml(r.verdict)}</td>` +
-    `<td>${r.age_days.toFixed(1)}</td></tr>`
-  ).join("");
+    "<tr><th>Table</th><th>Status</th><th>Age (days)</th><th>Source Period</th></tr>";
+  table.querySelector("tbody").innerHTML = rows.map((r) => {
+    const period = periodByTable[r.table_name];
+    return `<tr><td>${escapeHtml(r.table_name)}</td>` +
+      `<td class="verdict-${escapeHtml(r.verdict)}">${escapeHtml(r.verdict)}</td>` +
+      `<td>${r.age_days.toFixed(1)}</td>` +
+      `<td>${escapeHtml(period || "—")}</td></tr>`;
+  }).join("");
 }
 
 // --- CSV export ----------------------------------------------------------

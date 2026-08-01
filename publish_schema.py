@@ -477,6 +477,21 @@ def _kind_identifier_free_str(v):
     return isinstance(v, str) and not value_violations(v)
 
 
+_PL_PERIOD_RE = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
+
+
+def _kind_pl_period(v):
+    """A "YYYY-MM" reporting-period label for tables where the freshness
+    verdict is based on the latest month actually present in the source
+    file's own content (currently greeley_pl/denver_pl), or "" for every
+    other table this field doesn't apply to. Every freshness row must carry
+    this field (the scanner requires every declared field present in every
+    row) - "" is the explicit not-applicable value, not a missing one."""
+    if not isinstance(v, str):
+        return False
+    return v == "" or bool(_PL_PERIOD_RE.fullmatch(v))
+
+
 FIELD_KIND_VALIDATORS = {
     "period": _kind_period,
     "period_type": _kind_period_type,
@@ -498,6 +513,7 @@ FIELD_KIND_VALIDATORS = {
     "checksum_hex": _kind_checksum_hex,
     "table_name": _kind_table_name,
     "identifier_free_str": _kind_identifier_free_str,
+    "pl_period": _kind_pl_period,
 }
 
 
@@ -592,6 +608,7 @@ REPORT_SCHEMAS = {
         "loaded_at":       "timestamp",
         "age_days":        "amount",
         "verdict":         "freshness_enum",
+        "source_period":   "pl_period",
     },
 }
 

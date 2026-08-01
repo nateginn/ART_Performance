@@ -8,15 +8,29 @@ import os
 import sys
 import pickle
 import json
+
+# This network intercepts TLS (see scheduled_pull.py's notify() docstring for
+# the same issue affecting direct Telegram calls), and certifi's bundled CA
+# list doesn't trust the interception proxy's certificate the way Windows'
+# own trust store does. truststore.inject_into_ssl() patches ssl.SSLContext
+# to validate against the OS trust store instead, so the OAuth token refresh
+# (google.auth.transport.requests.Request, used below) and all Drive API
+# calls succeed unattended without weakening certificate verification itself
+# (no verify=False, no disabled checks - just a different, still-real, trust
+# source). Must run before anything that opens an HTTPS connection.
+import truststore
+truststore.inject_into_ssl()
+
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-sys.stdout.reconfigure(encoding='utf-8')
-sys.stderr.reconfigure(encoding='utf-8')
+if sys.stdout is not None and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding='utf-8')
+if sys.stderr is not None and hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding='utf-8')
 import googleapiclient.discovery
 from typing import List, Dict, Optional
-import sys
 
 
 class GoogleDriveAccessor:

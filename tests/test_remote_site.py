@@ -251,6 +251,26 @@ def test_freshness_table_populated(page, site):
     assert all(v for v in verdicts)
 
 
+def test_freshness_table_shows_source_period_for_pl_tables(page, site):
+    _open(page, site)
+    rows = page.eval_on_selector_all(
+        "#freshness-table tbody tr",
+        "els => els.map(e => Array.from(e.querySelectorAll('td')).map(td => td.textContent))",
+    )
+    by_table = {r[0]: r for r in rows}
+    assert len(rows[0]) == 4  # Table, Status, Age (days), Source Period
+    expected = {
+        r["table_name"]: r["source_period"] for r in site["bundle"]["freshness"]
+    }
+    for table_name in ("greeley_pl", "denver_pl"):
+        rendered_period = by_table[table_name][3]
+        want = expected[table_name] or "—"
+        assert rendered_period == want
+    # A non-PL table must render the not-applicable placeholder, not a blank
+    # cell or a stray "undefined".
+    assert by_table["prompt_visits"][3] == "—"
+
+
 def test_download_links_point_at_bundle_files(page, site):
     _open(page, site)
     hrefs = page.eval_on_selector_all(
