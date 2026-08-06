@@ -35,7 +35,14 @@ import math
 import re
 from datetime import date, datetime
 
-SCHEMA_VERSION = "2.0.0"
+# Step 7 (QuickBooks direct API integration, Data Freshness observability):
+# bumped 2.0.0 -> 2.1.0 for the freshness report's 5 new additive fields
+# (company_alias/source/last_attempt_at/last_success_at/failure_reason) --
+# a minor bump, not a rewrite of any existing field's meaning, but the
+# scanner's exact-field-set enforcement still means a bundle built against
+# this version is not byte-identical to one built against 2.0.0, so
+# consumers (the static viewer, any archived bundle) can tell them apart.
+SCHEMA_VERSION = "2.1.0"
 
 # ---------------------------------------------------------------------------
 # Field-name denylist — checked against every schema field name AND every key
@@ -190,6 +197,54 @@ ALLOWED_ANOMALY_SEVERITIES = {"INFO", "LOW", "MEDIUM", "HIGH"}
 # must be a member of this explicit allowlist, not merely table-name-shaped.
 ALLOWED_TABLE_NAMES = {
     "prompt_visits", "amd_billing", "unc_patients", "greeley_pl", "denver_pl",
+}
+
+# Step 7 (Data Freshness observability) — the freshness report's new
+# company_alias/source/failure_reason fields. "" is the explicit
+# not-applicable value for the 3 non-P&L tables (this project's other
+# tables have no per-company/per-source retrieval concept), mirroring
+# ALLOWED_TABLE_NAMES/_kind_pl_period's existing "closed set, not
+# syntax-only" philosophy.
+ALLOWED_COMPANY_ALIAS_VALUES = {"greeley", "denver", ""}
+ALLOWED_PL_SOURCE_VALUES = {"quickbooks_api", ""}
+
+# A closed, explicit failure-reason enum, not a free identifier-shaped
+# string — mirrors qbo_oauth._sanitize_error_code()'s and
+# qbo_pl_client._sanitize_provider_error()'s "fixed allowlist, never
+# pattern-matched free text" policy. "" means the last attempt succeeded
+# (or the table has no retrieval-attempt concept). The Step 5 typed
+# exception hierarchy plus qbo_token_store.RECONNECT_REASONS cover every
+# reason this project's own code currently produces;
+# scheduled_pull.py's own subprocess-level SubprocessError placeholder is
+# included too. "OtherError" is the deliberate fallback for any future,
+# not-yet-enumerated exception type — never let an unrecognized value
+# block the scanner or a publish, exactly like
+# qbo_oauth._sanitize_error_code()'s "unrecognized_error" placeholder.
+ALLOWED_PL_FAILURE_REASONS = {
+    "",
+    "OAuthError", "InvalidGrantError", "RetryExhaustedError",
+    "PLApiError", "PLAuthError", "PLValidationError", "PLRateLimitError",
+    "PLServerError", "PLNetworkError", "ConfigError", "SubprocessError",
+    "invalid_grant", "refresh_token_expired", "refresh_token_revoked", "reauth_required",
+    "OtherError",
+    # Step 7 Round 2 review finding: distinct from "SubprocessError" (a
+    # CONFIRMED subprocess-level failure) -- this covers the one case where
+    # scheduled_pull.py genuinely does not know the outcome (taskkill ran,
+    # but its own termination could not be confirmed within the follow-up
+    # wait). Recording this honestly (rather than a confident but possibly
+    # wrong "SubprocessError," and rather than recording nothing at all)
+    # is safe specifically because db_cache._record_pl_retrieval_attempt()
+    # is a monotonic-by-attempted_at atomic upsert: if the child was
+    # actually still alive and later completes for real, its own
+    # (necessarily later) write always wins over this placeholder.
+    "UnconfirmedTermination",
+    # Step 8 review finding: db_cache._refresh_one_pl_via_api() refuses to
+    # merge a sandbox-environment fetch into art_data.duckdb by default
+    # (connect() has no separate sandbox database -- a real incident during
+    # this project's own Step 8 sandbox validation overwrote real
+    # production P&L figures with sandbox demo data before this guard
+    # existed). A distinct, honest reason code, not "OtherError".
+    "SandboxWriteBlockedError",
 }
 
 
@@ -364,12 +419,34 @@ def _kind_timestamp(v):
     return True
 
 
+def _kind_nullable_timestamp(v):
+    """Step 7 (Data Freshness observability): "last attempt"/"last
+    success" -- unlike _kind_timestamp, "" is a valid, explicit
+    not-applicable/never-happened value (this table has never recorded an
+    attempt, or is one of the 3 tables with no retrieval-attempt concept
+    at all), not a missing field -- every freshness row must carry every
+    declared field regardless."""
+    return v == "" or _kind_timestamp(v)
+
+
 def _kind_facility_enum(v):
     return v in ALLOWED_FACILITY_VALUES
 
 
 def _kind_freshness_enum(v):
     return v in ALLOWED_FRESHNESS_VERDICTS
+
+
+def _kind_company_alias_enum(v):
+    return v in ALLOWED_COMPANY_ALIAS_VALUES
+
+
+def _kind_pl_source_enum(v):
+    return v in ALLOWED_PL_SOURCE_VALUES
+
+
+def _kind_pl_failure_reason_enum(v):
+    return v in ALLOWED_PL_FAILURE_REASONS
 
 
 def _kind_category_enum(v):
@@ -514,6 +591,10 @@ FIELD_KIND_VALIDATORS = {
     "table_name": _kind_table_name,
     "identifier_free_str": _kind_identifier_free_str,
     "pl_period": _kind_pl_period,
+    "nullable_timestamp": _kind_nullable_timestamp,
+    "company_alias_enum": _kind_company_alias_enum,
+    "pl_source_enum": _kind_pl_source_enum,
+    "pl_failure_reason_enum": _kind_pl_failure_reason_enum,
 }
 
 
@@ -609,6 +690,17 @@ REPORT_SCHEMAS = {
         "age_days":        "amount",
         "verdict":         "freshness_enum",
         "source_period":   "pl_period",
+        # Step 7 (Data Freshness observability) additions. "" is the
+        # explicit not-applicable value for the 3 non-P&L tables (and for
+        # last_attempt_at/last_success_at/failure_reason on a P&L table
+        # that has never recorded an attempt yet) -- every row must carry
+        # every declared field, so absence is never represented by
+        # omitting the key.
+        "company_alias":   "company_alias_enum",
+        "source":          "pl_source_enum",
+        "last_attempt_at": "nullable_timestamp",
+        "last_success_at": "nullable_timestamp",
+        "failure_reason":  "pl_failure_reason_enum",
     },
 }
 

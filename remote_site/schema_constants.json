@@ -12,6 +12,11 @@
     "LOW",
     "MEDIUM"
   ],
+  "allowed_company_alias_values": [
+    "",
+    "denver",
+    "greeley"
+  ],
   "allowed_facility_values": [
     "ART Denver",
     "ART Greeley",
@@ -32,6 +37,31 @@
     "Other",
     "Self Pay",
     "Work Comp"
+  ],
+  "allowed_pl_failure_reasons": [
+    "",
+    "ConfigError",
+    "InvalidGrantError",
+    "OAuthError",
+    "OtherError",
+    "PLApiError",
+    "PLAuthError",
+    "PLNetworkError",
+    "PLRateLimitError",
+    "PLServerError",
+    "PLValidationError",
+    "RetryExhaustedError",
+    "SandboxWriteBlockedError",
+    "SubprocessError",
+    "UnconfirmedTermination",
+    "invalid_grant",
+    "reauth_required",
+    "refresh_token_expired",
+    "refresh_token_revoked"
+  ],
+  "allowed_pl_source_values": [
+    "",
+    "quickbooks_api"
   ],
   "allowed_procedure_groups": [
     "All Procedures",
@@ -90,9 +120,14 @@
     },
     "freshness": {
       "age_days": "amount",
+      "company_alias": "company_alias_enum",
+      "failure_reason": "pl_failure_reason_enum",
+      "last_attempt_at": "nullable_timestamp",
+      "last_success_at": "nullable_timestamp",
       "loaded_at": "timestamp",
       "row_count": "count",
       "schema_version": "schema_version",
+      "source": "pl_source_enum",
       "source_period": "pl_period",
       "table_name": "table_name",
       "verdict": "freshness_enum"
@@ -128,5 +163,5 @@
   },
   "rollup_all_categories": "All Categories",
   "rollup_all_providers": "All Providers",
-  "schema_version": "2.0.0"
+  "schema_version": "2.1.0"
 }

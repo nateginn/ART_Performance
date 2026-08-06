@@ -285,6 +285,8 @@ const REQUIRED_CONSTANT_ARRAYS = [
   "allowed_facility_values", "canonical_categories", "allowed_payer_groups",
   "allowed_procedure_groups", "allowed_freshness_verdicts", "allowed_table_names",
   "allowed_anomaly_metrics", "allowed_anomaly_severities", "period_types",
+  // Step 7 (Data Freshness observability).
+  "allowed_company_alias_values", "allowed_pl_source_values", "allowed_pl_failure_reasons",
 ];
 const REQUIRED_CONSTANT_STRINGS = [
   "schema_version", "manifest_schema_version", "rollup_all_providers", "rollup_all_categories",
@@ -478,6 +480,10 @@ function validateBundleShape(bundle, constants) {
     anomaly_metric: constants.allowed_anomaly_metrics,
     anomaly_severity: constants.allowed_anomaly_severities,
     period_type: constants.period_types,
+    // Step 7 (Data Freshness observability).
+    company_alias_enum: constants.allowed_company_alias_values,
+    pl_source_enum: constants.allowed_pl_source_values,
+    pl_failure_reason_enum: constants.allowed_pl_failure_reasons,
   };
   const NONEMPTY_STRING_KINDS = new Set(["timestamp", "provider_name"]);
 
@@ -521,6 +527,18 @@ function validateBundleShape(bundle, constants) {
         } else if (enumSets[kind]) {
           if (!enumSets[kind].includes(v)) {
             problems.push(`${reportType}[${i}].${field} has an unrecognized ${kind} value`);
+          }
+        } else if (kind === "nullable_timestamp") {
+          // Step 7 (Data Freshness observability) review finding: this new
+          // kind previously received only the generic "field present"
+          // check below every other unhandled kind gets. "" (never
+          // attempted / not applicable) is valid; anything else must at
+          // least be a string, matching "timestamp"'s own shallow
+          // client-side depth (also just a non-empty-string check, not a
+          // full calendar parse) rather than inventing a stricter check
+          // for this one field alone.
+          if (typeof v !== "string") {
+            problems.push(`${reportType}[${i}].${field} is not a string`);
           }
         } else if (NONEMPTY_STRING_KINDS.has(kind) && (typeof v !== "string" || !v)) {
           problems.push(`${reportType}[${i}].${field} is not a non-empty string`);
@@ -876,27 +894,33 @@ function renderFinancial() {
 }
 
 function renderFreshness() {
-  // source_period lives on the bundle's own freshness rows, not the
-  // manifest's lighter-weight source_table_freshness summary - looked up
-  // by table_name rather than switching the table's row source, so the
-  // manifest's existing verdict/age_days summary stays the source of truth
-  // for those two columns.
-  const periodByTable = {};
+  // source_period (and, since Step 7, company_alias/last_attempt_at/
+  // last_success_at/failure_reason) live on the bundle's own freshness
+  // rows, not the manifest's lighter-weight source_table_freshness summary
+  // - looked up by table_name rather than switching the table's row
+  // source, so the manifest's existing verdict/age_days summary stays the
+  // source of truth for those two columns.
+  const detailByTable = {};
   for (const r of state.bundle.freshness || []) {
-    periodByTable[r.table_name] = r.source_period;
+    detailByTable[r.table_name] = r;
   }
   const rows = state.manifest.source_table_freshness.slice().sort((a, b) =>
     a.table_name.localeCompare(b.table_name)
   );
   const table = document.getElementById("freshness-table");
   table.querySelector("thead").innerHTML =
-    "<tr><th>Table</th><th>Status</th><th>Age (days)</th><th>Source Period</th></tr>";
+    "<tr><th>Table</th><th>Status</th><th>Age (days)</th><th>Source Period</th>" +
+    "<th>Company</th><th>Last Attempt</th><th>Last Success</th><th>Reason</th></tr>";
   table.querySelector("tbody").innerHTML = rows.map((r) => {
-    const period = periodByTable[r.table_name];
+    const d = detailByTable[r.table_name] || {};
     return `<tr><td>${escapeHtml(r.table_name)}</td>` +
       `<td class="verdict-${escapeHtml(r.verdict)}">${escapeHtml(r.verdict)}</td>` +
       `<td>${r.age_days.toFixed(1)}</td>` +
-      `<td>${escapeHtml(period || "—")}</td></tr>`;
+      `<td>${escapeHtml(d.source_period || "—")}</td>` +
+      `<td>${escapeHtml(d.company_alias || "—")}</td>` +
+      `<td>${escapeHtml(d.last_attempt_at || "—")}</td>` +
+      `<td>${escapeHtml(d.last_success_at || "—")}</td>` +
+      `<td>${escapeHtml(d.failure_reason || "—")}</td></tr>`;
   }).join("");
 }
 

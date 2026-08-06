@@ -42,6 +42,10 @@ def build_constants() -> dict:
         "allowed_table_names": sorted(schema.ALLOWED_TABLE_NAMES),
         "allowed_anomaly_metrics": sorted(schema.ALLOWED_ANOMALY_METRICS),
         "allowed_anomaly_severities": sorted(schema.ALLOWED_ANOMALY_SEVERITIES),
+        # Step 7 (Data Freshness observability).
+        "allowed_company_alias_values": sorted(schema.ALLOWED_COMPANY_ALIAS_VALUES),
+        "allowed_pl_source_values": sorted(schema.ALLOWED_PL_SOURCE_VALUES),
+        "allowed_pl_failure_reasons": sorted(schema.ALLOWED_PL_FAILURE_REASONS),
         # field_name -> kind per report type, straight from REPORT_SCHEMAS.
         # remote_site/app.js uses this to canonicalize each field correctly
         # (int vs float formatting) when re-checksumming a fetched bundle

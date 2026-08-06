@@ -17,3 +17,4 @@ playwright
 python-dotenv
 pytest
 paramiko
+requests==2.32.5

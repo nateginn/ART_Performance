@@ -66,6 +66,11 @@ data/prompt_emr_session.json
 data/emr_downloads/
 prompt_ report_tests_examples/
 
+# QuickBooks OAuth tokens - DPAPI-encrypted, but never commit regardless
+# (covers the base file, its lock file, and every PID/random-suffixed
+# temp-write file _write_all() creates)
+data/qbo_tokens.enc*
+
 # Generated output - changes every run, no value in version control
 data/*.csv
 data/*.md

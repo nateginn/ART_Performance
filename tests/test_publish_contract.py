@@ -84,6 +84,13 @@ def _clean_freshness_row(**overrides):
         "age_days": 0.5,
         "verdict": "FRESH",
         "source_period": "",
+        # Step 7 (Data Freshness observability) -- "" not-applicable
+        # defaults, matching prompt_visits (a non-P&L table).
+        "company_alias": "",
+        "source": "",
+        "last_attempt_at": "",
+        "last_success_at": "",
+        "failure_reason": "",
     }
     row.update(overrides)
     return row
@@ -649,6 +656,78 @@ def test_schema_version_must_match_exactly():
     assert not result.ok
 
 
+# ---------------------------------------------------------------------------
+# Step 7 (Data Freshness observability) — the freshness report's 5 new
+# fields: company_alias/source/last_attempt_at/last_success_at/
+# failure_reason.
+# ---------------------------------------------------------------------------
+
+def test_company_alias_accepts_greeley_denver_and_not_applicable():
+    for value in ("greeley", "denver", ""):
+        row = _clean_freshness_row(company_alias=value)
+        result = publish_scanner.scan_report("freshness", [row])
+        assert result.ok, f"{value!r} should be valid"
+
+
+def test_company_alias_rejects_anything_else():
+    for bad in ("Greeley", "GREELEY", "denver_pl", "greeley,denver", "unc_patients"):
+        row = _clean_freshness_row(company_alias=bad)
+        result = publish_scanner.scan_report("freshness", [row])
+        assert not result.ok, f"{bad!r} should be rejected"
+
+
+def test_pl_source_accepts_quickbooks_api_and_not_applicable():
+    for value in ("quickbooks_api", ""):
+        row = _clean_freshness_row(source=value)
+        result = publish_scanner.scan_report("freshness", [row])
+        assert result.ok, f"{value!r} should be valid"
+
+
+def test_pl_source_rejects_the_legacy_drive_label_and_anything_else():
+    # Legacy Drive-CSV attempts are never recorded into _pl_retrieval_status
+    # (Step 6: refresh_quickbooks_pls_from_drive() is a manual/backup path
+    # outside the daily production run) -- "drive_csv" is deliberately NOT
+    # in the allowlist yet, so a future accidental wiring-up would fail the
+    # scanner rather than silently publish.
+    for bad in ("drive_csv", "Playwright", "manual"):
+        row = _clean_freshness_row(source=bad)
+        result = publish_scanner.scan_report("freshness", [row])
+        assert not result.ok, f"{bad!r} should be rejected"
+
+
+def test_nullable_timestamp_accepts_empty_string_and_a_real_timestamp():
+    for value in ("", "2026-08-01T12:00:00+00:00"):
+        row = _clean_freshness_row(last_attempt_at=value, last_success_at=value)
+        result = publish_scanner.scan_report("freshness", [row])
+        assert result.ok, f"{value!r} should be valid"
+
+
+def test_nullable_timestamp_rejects_a_bare_date_and_garbage():
+    for bad in ("2026-08-01", "yesterday", "null", "None"):
+        row = _clean_freshness_row(last_attempt_at=bad)
+        result = publish_scanner.scan_report("freshness", [row])
+        assert not result.ok, f"{bad!r} should be rejected"
+
+
+def test_pl_failure_reason_accepts_every_step5_exception_and_reconnect_reason():
+    for value in publish_schema.ALLOWED_PL_FAILURE_REASONS:
+        row = _clean_freshness_row(failure_reason=value)
+        result = publish_scanner.scan_report("freshness", [row])
+        assert result.ok, f"{value!r} should be valid"
+
+
+def test_pl_failure_reason_rejects_an_unenumerated_exception_class_name():
+    """A future, not-yet-enumerated exception type must never reach the
+    published bundle verbatim -- the exporter is responsible for mapping it
+    to "OtherError" first (see publish_exporter._sanitize_pl_failure_reason()),
+    and the scanner is the backstop that catches it if that mapping is ever
+    bypassed."""
+    for bad in ("KeyError", "some_new_error", "OAuthError "):
+        row = _clean_freshness_row(failure_reason=bad)
+        result = publish_scanner.scan_report("freshness", [row])
+        assert not result.ok, f"{bad!r} should be rejected"
+
+
 # --------------------------------------------------------------------------
 # Bundle completeness and fail-closed behaviour
 # --------------------------------------------------------------------------
@@ -940,3 +1019,24 @@ def test_contract_modules_reference_no_real_data_paths_in_code():
                     assert marker not in lowered, (
                         f"{module} has a code string referencing {marker!r}: {node.value!r}"
                     )
+
+
+# ---------------------------------------------------------------------------
+# Step 7 (Data Freshness observability) — guard rails against the new
+# freshness enums silently drifting from their canonical sources.
+# publish_schema.py deliberately hardcodes its own literal copies (kept
+# decoupled from the qbo_* implementation modules on purpose — see
+# ALLOWED_COMPANY_ALIAS_VALUES/ALLOWED_PL_FAILURE_REASONS's own comments —
+# but "decoupled" must not mean "silently divergent," so these tests fail
+# loudly the moment either canonical source changes without a matching
+# publish_schema.py update.
+# ---------------------------------------------------------------------------
+
+def test_allowed_company_alias_values_matches_qbo_config():
+    import qbo_config
+    assert publish_schema.ALLOWED_COMPANY_ALIAS_VALUES == set(qbo_config.COMPANY_ALIASES) | {""}
+
+
+def test_allowed_pl_failure_reasons_includes_every_reconnect_reason():
+    import qbo_token_store
+    assert qbo_token_store.RECONNECT_REASONS <= publish_schema.ALLOWED_PL_FAILURE_REASONS

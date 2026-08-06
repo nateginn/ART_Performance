@@ -93,15 +93,37 @@ PL_ROWS = [
 
 
 def _build_synthetic_db():
+    """Step 8 review finding: this fixture previously left greeley_pl/
+    denver_pl with NO _cache_meta row at all, which made build_freshness()
+    report verdict UNKNOWN for both -- silently exercising export()'s
+    default (allow_stale=False) success path WITHOUT ever exercising its
+    P&L freshness gate at all (UNKNOWN wasn't gated, only STALE was, and no
+    test using this fixture could have caught that, since it never produced
+    a STALE verdict either). A real production greeley_pl/denver_pl always
+    has a _cache_meta row (every write path sets one atomically with the
+    data) -- this fixture now matches that reality: FRESH P&L data, with a
+    period computed from db_cache.expected_pl_period() so it never rots
+    into STALE as real time passes, exactly like _con_with_pl_cache_meta()
+    already does for the dedicated freshness tests below."""
+    import db_cache as _db_cache
+
     con = duckdb.connect(":memory:")
     con.execute(PROMPT_VISITS_DDL)
     con.executemany(
         'INSERT INTO prompt_visits VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
         SYNTHETIC_VISITS,
     )
+    year, month = _db_cache.expected_pl_period()
+    current_pl_rows = [
+        (None, _pl_period_label(year, month)),
+        ("Total for Income", "10000.00"),
+        ("Total for Expenses", "6000.00"),
+        ("Net Income", "4000.00"),
+    ]
+    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     for table in ("greeley_pl", "denver_pl"):
         con.execute(PL_DDL_TEMPLATE.format(table=table))
-        con.executemany(f'INSERT INTO {table} VALUES (?,?)', PL_ROWS)
+        con.executemany(f'INSERT INTO {table} VALUES (?,?)', current_pl_rows)
     con.execute('''
         CREATE TABLE _cache_meta (
             table_name VARCHAR, drive_file_id VARCHAR,
@@ -109,9 +131,12 @@ def _build_synthetic_db():
         )
     ''')
     con.execute(
-        "INSERT INTO _cache_meta VALUES ('prompt_visits', NULL, NULL, ?)",
-        [__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()],
+        "INSERT INTO _cache_meta VALUES ('prompt_visits', NULL, NULL, ?)", [now],
     )
+    for table in ("greeley_pl", "denver_pl"):
+        con.execute(
+            "INSERT INTO _cache_meta VALUES (?, 'fid', 'mtime', ?)", [table, now],
+        )
     return con
 
 
@@ -605,10 +630,12 @@ def test_anomaly_summary_is_aggregate_only_empty_in_phase_2(bundle):
 
 
 def test_financial_summary_computed_from_pl_shape(bundle):
+    import db_cache as _db_cache
+    year, month = _db_cache.expected_pl_period()
     rows = bundle["financial_summary"]
     assert len(rows) == 2  # one per facility
     for row in rows:
-        assert row["period"] == "2026-06"
+        assert row["period"] == f"{year:04d}-{month:02d}"
         assert row["revenue"] == pytest.approx(10000.0)
         assert row["expenses"] == pytest.approx(6000.0)
         assert row["net_income"] == pytest.approx(4000.0)
@@ -736,6 +763,126 @@ def test_bundle_with_real_pl_freshness_still_passes_scanner_clean():
         if r["table_name"] not in ("greeley_pl", "denver_pl")
     ]
     assert all(p == "" for p in non_pl_periods)
+
+
+# ---------------------------------------------------------------------------
+# Step 7 (Data Freshness observability): company_alias/source/
+# last_attempt_at/last_success_at/failure_reason
+# ---------------------------------------------------------------------------
+
+def test_freshness_pl_fields_default_to_not_applicable_for_non_pl_tables():
+    con = _con_with_pl_cache_meta("March 2020")
+    try:
+        bundle = exporter.build_bundle(con)
+    finally:
+        con.close()
+    non_pl_rows = [r for r in bundle["freshness"] if r["table_name"] not in ("greeley_pl", "denver_pl")]
+    assert non_pl_rows  # sanity: there are non-PL rows to check
+    for r in non_pl_rows:
+        assert r["company_alias"] == ""
+        assert r["source"] == ""
+        assert r["last_attempt_at"] == ""
+        assert r["last_success_at"] == ""
+        assert r["failure_reason"] == ""
+
+
+def test_freshness_pl_fields_derive_company_alias_even_never_attempted():
+    """company_alias is derivable from table_name alone and must be
+    populated even before any retrieval attempt has ever been recorded --
+    the "not-configured" case Step 7 explicitly requires coverage for."""
+    con = _con_with_pl_cache_meta("March 2020")
+    try:
+        bundle = exporter.build_bundle(con)
+    finally:
+        con.close()
+    by_table = {r["table_name"]: r for r in bundle["freshness"]}
+    assert by_table["greeley_pl"]["company_alias"] == "greeley"
+    assert by_table["denver_pl"]["company_alias"] == "denver"
+    assert by_table["greeley_pl"]["last_attempt_at"] == ""
+    assert by_table["greeley_pl"]["failure_reason"] == ""
+
+
+def test_freshness_pl_fields_surface_a_real_recorded_success():
+    import db_cache as _db_cache
+
+    con = _con_with_pl_cache_meta("March 2020")
+    try:
+        _db_cache._record_pl_retrieval_attempt(
+            con, "denver_pl", "denver", "quickbooks_api", success=True,
+            attempted_at="2026-08-01T12:00:00+00:00",
+        )
+        bundle = exporter.build_bundle(con)
+    finally:
+        con.close()
+    denver = next(r for r in bundle["freshness"] if r["table_name"] == "denver_pl")
+    assert denver["source"] == "quickbooks_api"
+    assert denver["last_attempt_at"] == "2026-08-01T12:00:00+00:00"
+    assert denver["last_success_at"] == "2026-08-01T12:00:00+00:00"
+    assert denver["failure_reason"] == ""
+
+
+def test_freshness_pl_fields_surface_a_real_recorded_failure_without_advancing_success():
+    import db_cache as _db_cache
+
+    con = _con_with_pl_cache_meta("March 2020")
+    try:
+        _db_cache._record_pl_retrieval_attempt(
+            con, "greeley_pl", "greeley", "quickbooks_api", success=False,
+            error_type="PLRateLimitError", attempted_at="2026-08-02T08:00:00+00:00",
+        )
+        bundle = exporter.build_bundle(con)
+    finally:
+        con.close()
+    greeley = next(r for r in bundle["freshness"] if r["table_name"] == "greeley_pl")
+    assert greeley["last_attempt_at"] == "2026-08-02T08:00:00+00:00"
+    assert greeley["last_success_at"] == ""  # never succeeded
+    assert greeley["failure_reason"] == "PLRateLimitError"
+
+
+def test_freshness_pl_fields_surface_reconnect_reason_over_bare_error_type():
+    import db_cache as _db_cache
+
+    con = _con_with_pl_cache_meta("March 2020")
+    try:
+        _db_cache._record_pl_retrieval_attempt(
+            con, "greeley_pl", "greeley", "quickbooks_api", success=False,
+            error_type="InvalidGrantError", reconnect_reason="invalid_grant",
+        )
+        bundle = exporter.build_bundle(con)
+    finally:
+        con.close()
+    greeley = next(r for r in bundle["freshness"] if r["table_name"] == "greeley_pl")
+    assert greeley["failure_reason"] == "invalid_grant"
+
+
+def test_sanitize_pl_failure_reason_maps_unrecognized_values_to_othererror():
+    """Step 7's explicit review requirement, applied here: an unenumerated
+    exception type must never reach the published bundle verbatim."""
+    assert exporter._sanitize_pl_failure_reason("KeyError") == "OtherError"
+    assert exporter._sanitize_pl_failure_reason("PLAuthError") == "PLAuthError"
+    assert exporter._sanitize_pl_failure_reason("success") == ""
+    assert exporter._sanitize_pl_failure_reason(None) == ""
+
+
+def test_freshness_pl_fields_partial_success_one_facility_only():
+    """Step 7's explicit "partial-success" test case: Denver has a real
+    recorded success while Greeley has never been attempted at all -- each
+    table's fields must be computed entirely independently."""
+    import db_cache as _db_cache
+
+    con = _con_with_pl_cache_meta("March 2020")
+    try:
+        _db_cache._record_pl_retrieval_attempt(
+            con, "denver_pl", "denver", "quickbooks_api", success=True,
+            attempted_at="2026-08-01T12:00:00+00:00",
+        )
+        bundle = exporter.build_bundle(con)
+    finally:
+        con.close()
+    by_table = {r["table_name"]: r for r in bundle["freshness"]}
+    assert by_table["denver_pl"]["last_success_at"] == "2026-08-01T12:00:00+00:00"
+    assert by_table["greeley_pl"]["last_attempt_at"] == ""
+    assert by_table["greeley_pl"]["last_success_at"] == ""
 
 
 def test_null_financial_fields_are_counted_for_visibility_not_hidden(con):
@@ -893,6 +1040,73 @@ def test_export_allow_stale_overrides_the_freshness_gate(con, tmp_path, monkeypa
     con.execute(
         "INSERT INTO _cache_meta VALUES ('prompt_visits', NULL, NULL, '2020-01-01T00:00:00+00:00')"
     )
+    monkeypatch.setattr(exporter, "connect", lambda db_path=None: con)
+    summary = exporter.export(output_dir=str(tmp_path / "out"), dry_run=True, allow_stale=True)
+    assert summary["written"] is False  # still dry-run, just didn't raise
+
+
+def test_export_refuses_stale_pl_without_override(tmp_path, monkeypatch):
+    """Step 8 review finding: financial_summary is built directly from
+    greeley_pl/denver_pl's own content (build_financial_summary()) -- a
+    STALE P&L verdict was previously only exposed for display in the
+    freshness report, never enforced. Uses _con_with_pl_cache_meta() (not
+    the plain `con` fixture) specifically because the plain fixture has no
+    _cache_meta row for the P&L tables, which makes build_freshness() take
+    the pre-existing "loaded_at unknown -> UNKNOWN" branch and never
+    actually reach pl_freshness_verdict() -- a real, content-based STALE
+    verdict requires this helper."""
+    con = _con_with_pl_cache_meta("March 2020")
+    try:
+        monkeypatch.setattr(exporter, "connect", lambda db_path=None: con)
+        with pytest.raises(exporter.ExporterError, match="greeley_pl|denver_pl"):
+            exporter.export(output_dir=str(tmp_path / "out"), dry_run=True)
+    finally:
+        con.close()
+
+
+def test_export_allow_stale_overrides_the_pl_freshness_gate(tmp_path, monkeypatch):
+    con = _con_with_pl_cache_meta("March 2020")
+    try:
+        monkeypatch.setattr(exporter, "connect", lambda db_path=None: con)
+        summary = exporter.export(output_dir=str(tmp_path / "out"), dry_run=True, allow_stale=True)
+        assert summary["written"] is False  # still dry-run, just didn't raise
+    finally:
+        con.close()
+
+
+def test_export_succeeds_when_pl_period_meets_freshness_policy(tmp_path, monkeypatch):
+    """The gate must not be a blanket "P&L present" check -- a genuinely
+    fresh P&L (the expected last-closed-month period is present) must
+    publish normally without --allow-stale."""
+    import db_cache as _db_cache
+    year, month = _db_cache.expected_pl_period()
+    con = _con_with_pl_cache_meta(_pl_period_label(year, month))
+    try:
+        monkeypatch.setattr(exporter, "connect", lambda db_path=None: con)
+        summary = exporter.export(output_dir=str(tmp_path / "out"), dry_run=True)
+        assert summary["written"] is False  # dry-run, but did not raise
+    finally:
+        con.close()
+
+
+def test_export_refuses_unknown_pl_freshness_without_override(con, tmp_path, monkeypatch):
+    """Step 8 Round 3 review finding: Round 2 rejected gating UNKNOWN,
+    reasoning that a table reaching this point with UNKNOWN could only have
+    "real content, just no _cache_meta row" and therefore posed no
+    "silently looks current" risk -- disproved directly: this project's own
+    `con` fixture (before being corrected as part of this same round) had
+    exactly that shape and produced two perfectly real-looking
+    financial_summary rows while its freshness verdict was UNKNOWN. Removes
+    just the P&L _cache_meta rows the (now-corrected) `con` fixture
+    normally provides, to reproduce that exact prior state directly."""
+    con.execute("DELETE FROM _cache_meta WHERE table_name IN ('greeley_pl', 'denver_pl')")
+    monkeypatch.setattr(exporter, "connect", lambda db_path=None: con)
+    with pytest.raises(exporter.ExporterError, match="greeley_pl|denver_pl"):
+        exporter.export(output_dir=str(tmp_path / "out"), dry_run=True)
+
+
+def test_export_allow_stale_overrides_the_unknown_pl_gate(con, tmp_path, monkeypatch):
+    con.execute("DELETE FROM _cache_meta WHERE table_name IN ('greeley_pl', 'denver_pl')")
     monkeypatch.setattr(exporter, "connect", lambda db_path=None: con)
     summary = exporter.export(output_dir=str(tmp_path / "out"), dry_run=True, allow_stale=True)
     assert summary["written"] is False  # still dry-run, just didn't raise

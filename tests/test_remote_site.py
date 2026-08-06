@@ -258,7 +258,9 @@ def test_freshness_table_shows_source_period_for_pl_tables(page, site):
         "els => els.map(e => Array.from(e.querySelectorAll('td')).map(td => td.textContent))",
     )
     by_table = {r[0]: r for r in rows}
-    assert len(rows[0]) == 4  # Table, Status, Age (days), Source Period
+    # Table, Status, Age (days), Source Period, Company, Last Attempt,
+    # Last Success, Reason (Step 7: Data Freshness observability).
+    assert len(rows[0]) == 8
     expected = {
         r["table_name"]: r["source_period"] for r in site["bundle"]["freshness"]
     }
@@ -269,6 +271,74 @@ def test_freshness_table_shows_source_period_for_pl_tables(page, site):
     # A non-PL table must render the not-applicable placeholder, not a blank
     # cell or a stray "undefined".
     assert by_table["prompt_visits"][3] == "—"
+
+
+def test_freshness_table_shows_company_alias_and_reason_for_pl_tables(page, site):
+    """Step 7 (Data Freshness observability): company_alias is always
+    derivable/rendered for greeley_pl/denver_pl even though this fixture's
+    synthetic DB has never recorded a real retrieval attempt (last
+    attempt/success/reason must all show the not-applicable placeholder,
+    not a blank cell or "undefined")."""
+    _open(page, site)
+    rows = page.eval_on_selector_all(
+        "#freshness-table tbody tr",
+        "els => els.map(e => Array.from(e.querySelectorAll('td')).map(td => td.textContent))",
+    )
+    by_table = {r[0]: r for r in rows}
+
+    assert by_table["greeley_pl"][4] == "greeley"  # Company column
+    assert by_table["denver_pl"][4] == "denver"
+    assert by_table["prompt_visits"][4] == "—"  # not a P&L table
+
+    # Never-attempted in this synthetic fixture -- last attempt/success/
+    # reason all render the not-applicable placeholder.
+    for table_name in ("greeley_pl", "denver_pl"):
+        assert by_table[table_name][5] == "—"  # Last Attempt
+        assert by_table[table_name][6] == "—"  # Last Success
+        assert by_table[table_name][7] == "—"  # Reason
+
+
+def test_freshness_table_shows_a_real_recorded_failure_end_to_end(tmp_path, page):
+    """Full pipeline, not just the never-attempted case above: a genuinely
+    recorded failed retrieval attempt (db_cache._record_pl_retrieval_attempt)
+    must flow through the real exporter/scanner/manifest into the rendered
+    page's Last Attempt/Reason columns, while last_success_at stays the
+    not-applicable placeholder (never having succeeded)."""
+    import db_cache
+
+    con = _build_synthetic_db()
+    try:
+        db_cache._record_pl_retrieval_attempt(
+            con, "greeley_pl", "greeley", "quickbooks_api", success=False,
+            error_type="OAuthError", attempted_at="2026-08-01T12:00:00+00:00",
+        )
+        bundle = exporter.build_bundle(con)
+    finally:
+        con.close()
+    manifest = publish_manifest.build_manifest(
+        bundle, reporting_period="2026-06..2026-06",
+        generated_at="2026-07-28T12:00:00+00:00",
+    )
+
+    httpd, thread, url = _serve_custom(tmp_path, "pl-failure", bundle, manifest)
+    try:
+        console_errors = []
+        page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+        page.goto(url)
+        page.wait_for_selector("#app[aria-busy='false']", timeout=10_000)
+        assert console_errors == []
+
+        rows = page.eval_on_selector_all(
+            "#freshness-table tbody tr",
+            "els => els.map(e => Array.from(e.querySelectorAll('td')).map(td => td.textContent))",
+        )
+        by_table = {r[0]: r for r in rows}
+        assert by_table["greeley_pl"][5] == "2026-08-01T12:00:00+00:00"  # Last Attempt
+        assert by_table["greeley_pl"][6] == "—"  # Last Success -- never succeeded
+        assert by_table["greeley_pl"][7] == "OAuthError"  # Reason
+    finally:
+        httpd.shutdown()
+        thread.join(timeout=5)
 
 
 def test_download_links_point_at_bundle_files(page, site):

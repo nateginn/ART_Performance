@@ -10,6 +10,93 @@ Funnel/public serve; don't break `/unc-reports/`; ART reports use a separate
 `/art-reports/` route on the existing `art2025-website` droplet; no deletions;
 diffs not rewrites; never commit secrets or generated report data.
 
+## Current status override — 2026-08-03 (QuickBooks Direct API, Step 8 Round 7 — separate plan)
+
+Continued Step 8 of `PROMPT-CLAUDE-QUICKBOOKS-DIRECT-API.md` (full regression + sandbox
+validation) in a fresh session. Full detail, including the exact live-exercise evidence
+and the 3-pass Codex review that approved this round, is in `PLAN-REVIEW-LOG.md`'s
+"Round 7" section. Summary, stated at the same honesty level as every prior round of
+this same document:
+
+- **Verified the restored state from Round 6 was untouched** before doing anything else:
+  `backups/art_data_before_sandbox_restore_20260803.duckdb` and `backups/art_data_20260801.
+  duckdb` both present; `greeley_pl`/`denver_pl` still 47/46 rows; `_pl_retrieval_status`
+  still absent; `pytest tests/ -q` reproduced 704 passed exactly.
+- **Root-caused and fixed the TLS limitation Round 6 left unexplained.** Round 6 attributed
+  a `SSLCertVerificationError` blocking live network exercises to an unspecified
+  "environment limitation." This round found the actual cause with direct evidence — the
+  local AVG antivirus product's HTTPS-scanning feature re-signs traffic with a locally-
+  generated root (`AVG Web/Mail Shield Root`) that Windows' OS trust store trusts but
+  Python's bundled `certifi` CA list does not, the exact same class of interception
+  `Google_Drive_Access.py` already documents and fixes for the separate Google Drive
+  pipeline. Applied the identical, already-reviewed `truststore.inject_into_ssl()` fix to
+  `qbo_oauth.py` and `qbo_pl_client.py`. No verification is weakened (still real
+  cryptographic checking, no `verify=False`) — validation now succeeds against the OS
+  trust store the same way it already does for Drive/Telegram.
+- **This converted two of Round 6's blocked live-exercise gaps into genuine, independently
+  re-verified evidence**, live against the real Intuit sandbox: (1) a forced access-token
+  refresh for both `greeley` and `denver` via `qbo_oauth.ensure_valid_access_token`,
+  confirmed persisted by re-reading the token store fresh afterward; (2) a genuine
+  provider-validation error (HTTP 400, `ValidationFault`) exercised through the actual
+  production call path (`qbo_retry.fetch_profit_and_loss_resilient`), with the real
+  structured log line captured verbatim and the "never retry a permanent error" policy
+  confirmed against a real response, not a mocked one. `art_data.duckdb` was independently
+  re-confirmed untouched after every exercise (still 47/46 rows) — none of this round's
+  live calls touch that file.
+- **Disconnect/reconnect**: the operator (Nate) stated directly that a genuine, human-
+  attended disconnect/reconnect/re-pull cycle for both companies was already completed
+  outside this session. Recorded as direct operator attestation, explicitly not
+  independently re-verified against any system artifact this session could check (there
+  is none — `connect()`/`disconnect()` are interactive CLI operations with no persistent
+  log trail, and the one field that might have corroborated it was overwritten by this
+  same session's own earlier token-refresh exercise before the question was asked).
+- **A live run of `scheduled_pull.py`** (the real daily Prompt+QuickBooks scheduled job)
+  was explicitly NOT performed — the operator was asked directly and chose to rely on the
+  existing, re-confirmed mocked orchestration coverage instead (`tests/test_scheduled_pull.py`,
+  42 tests covering the exact ordering/failure-isolation/gating behavior). This remains
+  the one genuinely open item from Step 8's own checklist, by operator choice, not an
+  oversight or a limitation this round could not work around.
+- **`/codex-review` result: APPROVED** after 3 passes in one Codex thread (model
+  `gpt-5.6-luna`). Pass 1 found 6 real issues (unverified TLS trust provenance, an
+  undersold "read-only" framing of the token refresh, an overbroad provider-error/logging
+  claim, a wrong test count, plus 2 items it explicitly accepted as already honest).
+  Fixed all of them, including a genuine new live exercise (the `qbo_retry`-layer logging
+  re-run) rather than just softening the claim. Pass 2 found 2 more documentation-
+  precision issues (wrong backup attribution, wrong arithmetic in the closing summary,
+  an "end-to-end" overclaim on TLS validation) — fixed. Pass 3: APPROVED, with an explicit
+  note that the log "does not overclaim Step 8 completion."
+- **`pytest tests/ -q` → 704 passed, 0 failed, unchanged** — the `truststore` addition is
+  inert for every mocked test; it only changes behavior against a real network call.
+
+**Files changed this round:** `qbo_oauth.py`, `qbo_pl_client.py` (both: added
+`truststore.inject_into_ssl()` before their `requests` import — no other code change).
+
+**Not done, honestly:** Step 8 as a whole is still not complete. A live, non-mocked run
+of `scheduled_pull.py`'s real Prompt-plus-QuickBooks path remains unevidenced, by the
+operator's own choice this round. No production company was authorized, nothing was
+published, and the Intuit questionnaire was not touched — none of that is in scope until
+Step 8 is genuinely finished and the owner reviews it.
+
+**Closing status, same session, no further changes**: the implementation and every
+safely-executable piece of Step 8's validation are approved — code (`qbo_oauth.py`/
+`qbo_pl_client.py`'s truststore fix), the live token-refresh and provider-error
+exercises (including through the real production `qbo_retry` logging path), the
+restored and untouched `art_data.duckdb` (`greeley_pl=47`/`denver_pl=46`,
+`_pl_retrieval_status` absent), the live sandbox-write guard, and the live
+publication-gating refusal of stale P&L data. Step 8 remains `IN PROGRESS`/`REVISE` for
+exactly one reason: a live `scheduled_pull.py` run is intentionally deferred by the
+operator for safety (real Prompt EMR browser automation with real credentials, possible
+human-verification step) — not a limitation this session could not work around, a
+standing decision. No source change would close this item; only performing or formally
+waiving the live exercise would. Sandbox data must never be written to the production
+cache — no sandbox-to-production promotion path exists, by design. **Step 9 must not be
+declared complete or treated as approved until the owner explicitly decides whether to
+perform or formally waive this remaining live exercise.**
+
+STATUS: STEP 8 HUMAN-VALIDATION ITEM DEFERRED
+
+---
+
 ## Current status override — 2026-08-01 (QuickBooks P&L daily pull — separate plan)
 
 Implemented `PLAN-QUICKBOOKS-DAILY-PULL.md` in full — the daily `ARTPromptPull` task now also
@@ -1754,3 +1841,1098 @@ This is an approved future enhancement, not yet implemented. It should be added 
 reviewed exporter/schema/viewer change with aggregate-only tests for massage, acupuncture,
 chiropractic, shockwave, physical therapy, and fallback values. Do not alter the live bundle
 until those changes pass the scanner, manifest verification, and the required review.
+
+---
+
+## Current status override — 2026-08-01 (Direct QuickBooks API integration — new plan started)
+
+New objective, tracked in `PLAN-QUICKBOOKS-DIRECT-API-AND-COMPLIANCE.md` (authoritative 9-phase
+plan) and `PROMPT-CLAUDE-QUICKBOOKS-DIRECT-API.md` (9-step execution sequence with a mandatory
+`/codex-review` checkpoint after every step): replace the Google-Drive-CSV-sourced
+`greeley_pl`/`denver_pl` path with a direct, read-only QuickBooks Online API integration for the
+Denver and Greeley companies, attempted every day alongside Prompt. This is a separate, larger
+effort than the just-completed `PLAN-QUICKBOOKS-DAILY-PULL.md` work above, which stays as the
+historical record of the (still Drive-based) freshness-gating design this new plan builds on top
+of and ultimately replaces the ingestion source for.
+
+### Step 1 — Establish baseline and map current code: COMPLETE, APPROVED (self-verified closure)
+
+`PLAN.md` holds the full verified interface map (Prompt/P&L ingestion, freshness computation,
+publication gating, report generation, locking/atomic publication, Google Drive fallback).
+Baseline: `pytest tests/ -q` -> **279 passed, 2 warnings** (third-party deprecation warnings
+only) — exact match to the plan's stated baseline. 3 rounds of `/codex-review` (MAX_ROUNDS=3 for
+this mapping-only step), zero findings rejected, all applied. Full transcript in
+`PLAN-REVIEW-LOG.md`.
+
+**Most material finding:** `scheduled_pull.py::run_pull()` currently returns at its Prompt-failure
+exit points (lines 340/349) *before* the P&L refresh attempt (line 353) is ever reached — this
+contradicts the authoritative plan's Phase 4 requirement that QuickBooks be attempted "regardless
+of whether Prompt succeeds." This is not fixed yet — it is a named, required Step 6 change.
+
+**Other corrected findings, all verified against source:** the `greeley_pl`/`denver_pl` label
+column must be literally named `"Profit and Loss - Monthly"` (hardcoded in `ask.py`/
+`pivot_report.py`), not an arbitrary name as first drafted; `scheduled_pull.py`'s result-contract
+validation checks exactly 4 of 10 fields by value (`found`/`downloaded`/`acceptable` as bool,
+`verdict` as enum + a cross-field re-derivation check), the rest are presence-only;
+`quickbooks_pl_loader.py`/`qb_pl_reconciliation.py` are reachable via manual CLI paths (not
+"orphaned"), and the Medport-case/missing-category bugs are already fixed, but `ART Greeley
+transfer` still needs its documented exclusion (unresolved, out of scope for this plan);
+`requests`/`cryptography` are importable in the venv but not declared in `requirements.txt`
+(Step 2 must add both); `_cache_meta`'s `drive_modified_time`/`drive_file_id` columns are
+actively read by `_cached_time()`/`status()`, not just passively stored — Step 2/4 must decide
+their QBO-adapter substitute values and add a regression test, not just document intent; and a
+list of wholly-new-surface-area interfaces the authoritative plan requires (run ID, a
+success/stale/failed/not-configured status enum, request ranges, accounting method, Intuit TID,
+idempotency markers) that do not exist anywhere in current code yet.
+
+```text
+STEP: 1 — Establish baseline and map current code
+STATUS: COMPLETE
+FILES CHANGED:
+- PLAN.md (new plan content, overwriting the prior remote-reporting-phase plan)
+- PLAN-REVIEW-LOG.md (new "Direct QuickBooks Online API Integration" section appended)
+- REMOTE_REPORTING_STATUS.md (this entry)
+
+TESTS:
+- venv\Scripts\python.exe -m pytest tests/ -q: 279 passed, 2 warnings (baseline, unchanged
+  before/after this step's docs-only edits)
+
+CODEX REVIEW:
+- review invocation/result: codex exec -s read-only / codex exec resume, same thread
+  (019fbf61-f91c-7f70-9d47-f1a9b70d6068)
+- rounds required: 3 (MAX_ROUNDS for this mapping-only step), converged via self-verified
+  closure at the cap per this project's established precedent (Phase 0, above) — not a false
+  APPROVED
+- findings: 16 total across 3 rounds, all concrete and verifiable
+- fixes made: all 16 applied to PLAN.md after direct source verification
+- remaining findings: none disputed; the ART Greeley transfer exclusion gap is recorded as a
+  standing, explicitly out-of-scope legacy item, not silently dropped
+
+EVIDENCE:
+- scheduled_pull.py lines 322-363 (Prompt-failure returns precede the P&L gate)
+- ask.py:105, pivot_report.py:6 (hardcoded "Profit and Loss - Monthly" label column)
+- quickbooks_pl_loader.py:50 (NON_PATIENT_CATEGORIES missing "ART Greeley transfer")
+- main.py:362, qb_pl_reconciliation.py:472 (two independent manual invocation paths)
+- PLAN-REVIEW-LOG.md's new section (full 3-round transcript)
+
+HUMAN ACTION REQUIRED:
+- None for Step 1.
+
+NEXT STEP:
+- Step 2 — define configuration and secure token storage (Intuit Client ID/Secret,
+  environment, callback URL, Denver/Greeley aliases, realm IDs, accounting method,
+  timeout/retry limits, freshness thresholds; Windows DPAPI via ctypes for refresh-token
+  encryption at rest).
+```
+
+### Step 2 — Define configuration and secure token storage: COMPLETE, converged (self-verified closure at MAX_ROUNDS=4)
+
+New modules `qbo_config.py` (env-based settings: Client ID/Secret, environment, redirect URI,
+accounting method, bounded timeout/retry limits — `load_config()` fails clearly, never leaking
+a secret value) and `qbo_token_store.py` (per-company OAuth token persistence, encrypted at
+rest via Windows DPAPI called directly through `ctypes` — no new dependency — with an OS-level
+cross-process lock guarding every read-modify-write cycle). 94 new tests, all real (DPAPI round
+trips and a genuine forced-interleaving concurrency proof, not mocks). 4 rounds of
+`/codex-review`, zero findings rejected, all applied — including three real security/
+correctness bugs an unlocked/unvalidated first draft would have shipped: a lost-update race
+between concurrent token writes, a redirect-URI validator that would have accepted
+`https://localhost` in production, and write-time validation gaps that let an invalid
+`CompanyTokens` reach disk and only fail on the next read. Full transcript in
+`PLAN-REVIEW-LOG.md`.
+
+```text
+STEP: 2 — Define configuration and secure token storage
+STATUS: COMPLETE
+FILES CHANGED:
+- qbo_config.py (new)
+- qbo_token_store.py (new)
+- tests/test_qbo_config.py (new, 42 tests)
+- tests/test_qbo_token_store.py (new, 52 tests)
+- requirements.txt (+requests==2.32.5)
+- .gitignore (+data/qbo_tokens.enc*)
+- .env (+7 empty QBO_* placeholder keys, local/untracked, values never read or printed)
+- PLAN.md, PLAN-REVIEW-LOG.md, REMOTE_REPORTING_STATUS.md
+
+TESTS:
+- venv\Scripts\python.exe -m pytest tests/ -q: 373 passed, 2 warnings (from 279 baseline)
+
+CODEX REVIEW:
+- review invocation/result: codex exec -s read-only / codex exec resume, thread
+  019fbf72-d699-7540-a06b-6912490b2270
+- rounds required: 4 (MAX_ROUNDS), converged via self-verified closure at the cap
+- findings: 20 total across 4 rounds, all concrete and verified against source
+- fixes made: all 20 applied
+- remaining findings: none disputed
+
+EVIDENCE:
+- qbo_token_store.py's _token_store_lock (msvcrt.locking, OS-level, modeled on
+  publish_uploader.py's already-reviewed _publish_lock)
+- CompanyTokens.__post_init__ full-field validation; _load_all()'s matching read-side checks
+- qbo_config._validate_redirect_uri / _is_loopback_or_unspecified_host (ipaddress-based)
+- PLAN-REVIEW-LOG.md's Step 2 section (full 4-round transcript)
+
+HUMAN ACTION REQUIRED:
+- None for Step 2. (Real QBO_CLIENT_ID/QBO_CLIENT_SECRET values and the Intuit OAuth
+  connection itself are Step 3/8 concerns, not required yet.)
+
+NEXT STEP:
+- Step 3 — implement the OAuth flow using discovery-derived endpoints (state generation/
+  validation, authorization-code exchange, per-company realm association, refresh-token
+  rotation, disconnect/revoke), building on qbo_config.py and qbo_token_store.py.
+```
+
+### Step 3 — Implement OAuth using discovery-derived endpoints: COMPLETE, APPROVED (4 rounds)
+
+New module `qbo_oauth.py`: discovery fetch, CSRF state tracker, authorization-URL builder,
+token exchange/refresh/revoke (Client Secret only via HTTP Basic auth, never logged), a
+local one-shot callback HTTP server (bind-before-browser, per-connection timeout, tolerates
+stray requests), a manual-paste fallback for production/HTTPS-loopback redirects this
+machine can't bind to, and `connect()`/`disconnect()`/`ensure_valid_access_token()`
+orchestration. Extended the Step 2 token store with `locked_company_tokens()` (+`delete()`),
+a context manager holding the cross-process OS-level lock across an entire
+read-decide-refresh/revoke-save sequence — closing a real concurrent-refresh race Intuit
+documents can invalidate tokens.
+
+This was the highest-stakes step so far: **4 rounds of `/codex-review`, 21 total findings,
+zero rejected.** Real bugs caught and fixed before this touches a real QuickBooks company:
+a server-bind-after-browser-open ordering bug that could permanently lose a fast redirect; a
+missing per-connection socket timeout and no tolerance for stray requests on the callback
+port; an architectural incompatibility between the plain local HTTP server and both
+production's real-HTTPS-callback requirement and sandbox's own HTTPS-loopback option
+(fixed with a manual-paste fallback, validated against the configured redirect URI); OAuth
+error values that could leak arbitrary provider text into logs (fixed with a sanitizing
+allowlist); a docstring/code mismatch on which failure raises `InvalidGrantError`; **a
+critical lock-leak bug in the very concurrency primitive built to fix the concurrent-refresh
+race** (`locked_company_tokens.__enter__()` never released its lock on a load failure — the
+first regression test for this happened to pass only due to incidental CPython garbage-
+collection timing, not actual correctness, caught only because Round 2 reasoned about the
+`with`-statement protocol rather than trusting the green test); negative-leeway and
+malformed-timestamp/expires_in handling; a `disconnect()` that didn't catch
+`qbo_config.ConfigError` and could leave a "disconnected" record intact; `disconnect()`
+racing a concurrent refresh and resurrecting a record it had just removed; the unspecified
+address (0.0.0.0/::) being wrongly treated as "loopback-safe" (backwards — it means "all
+interfaces"); and a raw pasted-URL `ValueError` escaping the module's sanitized exception
+contract. Two residual limitations were deliberately documented rather than fixed with more
+locking, both accepted by Codex as the correct tradeoff for this single-operator system: a
+cross-company realm-reuse TOCTOU race, and a `connect()`-vs-`disconnect()` race that would
+require holding a lock across a multi-minute human-paced browser wait.
+
+```text
+STEP: 3 — Implement OAuth using discovery-derived endpoints
+STATUS: COMPLETE
+FILES CHANGED:
+- qbo_oauth.py (new)
+- qbo_token_store.py (extended: locked_company_tokens + delete())
+- qbo_config.py (is_loopback_or_unspecified_host split into is_loopback_host /
+  is_unspecified_host, both made public)
+- tests/test_qbo_oauth.py (new, 61 tests)
+- tests/test_qbo_token_store.py (+14 tests, 52 -> 66)
+- tests/test_qbo_config.py (+6 tests, 42 -> 48)
+- PLAN.md, PLAN-REVIEW-LOG.md, REMOTE_REPORTING_STATUS.md
+
+TESTS:
+- venv\Scripts\python.exe -m pytest tests/ -q: 454 passed, 2 warnings (from 373 baseline
+  at Step 3 start)
+- venv\Scripts\python.exe -m pytest tests/ -q -W error::pytest.PytestUnhandledThreadExceptionWarning:
+  clean (confirms the Step 3 preamble's socket-close race and Round 1's server-lifecycle
+  fix hold under strict thread-exception checking)
+
+CODEX REVIEW:
+- review invocation/result: codex exec -s read-only / codex exec resume, thread
+  019fbf95-7108-7fc0-803e-9db18fe0efc3
+- rounds required: 4 (MAX_ROUNDS), converged with a genuine VERDICT: APPROVED (not a
+  self-verified cap closure)
+- findings: 21 total across 4 rounds (12 + 7 + 2 + 0)
+- fixes made: 19 applied; 2 deliberately documented as accepted residual limitations
+  (both explicitly accepted by Codex in the same or a later round)
+- remaining findings: none
+
+EVIDENCE:
+- qbo_token_store.py's locked_company_tokens.__enter__() (try/except BaseException lock
+  release) and its retained-traceback regression test
+- qbo_oauth.py's _start_callback_server/_wait_for_callback split, _serve_until_callback's
+  stray-request tolerance and shrinking per-connection timeout
+- qbo_config.py's is_loopback_host/is_unspecified_host split
+- PLAN-REVIEW-LOG.md's Step 3 section (full 4-round transcript, 21 findings)
+
+HUMAN ACTION REQUIRED:
+- None for Step 3. (Real QBO_CLIENT_ID/QBO_CLIENT_SECRET and an actual sandbox/production
+  OAuth connection remain Step 8 concerns.)
+
+NEXT STEP:
+- Step 4 — implement the QuickBooks P&L API adapter (GET /v3/company/{realmId}/reports/
+  ProfitAndLoss), using qbo_oauth.ensure_valid_access_token() for authentication, six-month
+  window enforcement, defensive report parsing, and normalization into the existing
+  greeley_pl/denver_pl raw wide-table shape identified in Step 1's map.
+```
+
+## Incident — 2026-08-01/02, Step 4 of the QuickBooks direct-API integration
+
+A test-authoring mistake during Step 4 (`test_merge_quickbooks_pl_periods_raises_when_nothing_to_write`
+in `tests/test_db_cache_quickbooks_pl.py`) omitted the `db_path`/`monkeypatch` fixture every
+other test in that file uses to redirect `db_cache.connect()` to an isolated temp database.
+It connected to the REAL `art_data.duckdb` and executed `merge_quickbooks_pl_periods()`
+against it, which — because the new merge function only round-trips 4 target category
+labels, not full P&L line-item detail — rewrote the real `greeley_pl` table from 47 rows/9
+columns down to 5 rows/8 columns. `denver_pl` and every other table were untouched (this
+specific test only exercised the "greeley" facility).
+
+Caught immediately (by routinely checking file modification times before proceeding),
+confirmed via row-count comparison against a same-day backup
+(`backups/art_data_20260801.duckdb`, 08:01, predating the incident). Recovery required
+explicit owner permission (the first attempted automated fix was correctly blocked by the
+session's permission system as a write to production data); on approval, ran a targeted
+transactional restore of only `greeley_pl` and its one `_cache_meta` row from the backup.
+Verified afterward: `greeley_pl` restored to 47 rows/9 columns exactly matching the backup;
+`denver_pl` (46 rows) and `prompt_visits` (4,880 rows) confirmed unaffected before, during,
+and after the restore. No other file or table was touched.
+
+Both the test (missing fixture) and a genuine, separate code bug the same incident surfaced
+(`merge_quickbooks_pl_periods()` calling `_save_meta()` without first calling
+`_ensure_meta()`, which would fail on a database where no other writer had run yet) were
+fixed. Full detail, including the exact recovery commands, is in `PLAN.md`'s "Incident
+during this step" section for Step 4 and `PLAN-REVIEW-LOG.md`.
+
+**Lesson recorded for future sessions**: every test that calls a `db_cache.py` function
+which internally calls `connect()` MUST use the established `db_path`(`tmp_path`)/
+`monkeypatch.setattr(db_cache, "connect", ...)` pattern already used by every other test in
+`tests/test_db_cache_quickbooks_pl.py` — there is no automatic guard against a forgotten
+fixture connecting a test to the real production database.
+
+### Step 4 — Implement the QuickBooks P&L API adapter: COMPLETE, converged (self-verified closure at MAX_ROUNDS=4)
+
+New module `qbo_pl_client.py` (ProfitAndLoss report fetch + defensive JSON parsing,
+six-month window enforcement/splitting, Phase 3 source metadata) and `db_cache.py`
+additions (`merge_quickbooks_pl_periods()` — idempotent per-period merge into
+`greeley_pl`/`denver_pl`'s existing raw wide-table shape, preserving every existing
+category label). **A real incident occurred during this step** — see the dedicated
+"Incident — 2026-08-01/02" entry above for full detail: a flawed test connected to and
+partially destroyed the real `art_data.duckdb`'s `greeley_pl` table; caught immediately,
+disclosed in full, and restored from a same-day backup with the owner's explicit
+permission. The incident's actual architectural root cause (the merge design itself, not
+just the test bug) was found and fixed across 4 rounds of review.
+
+**4 rounds of `/codex-review`, 27 total findings, zero rejected** — the project's most
+consequential review cycle to date. Confirmed real bugs beyond the incident itself: raw
+`AttributeError`/`TypeError` crashes on malformed API responses; invalid calendar dates and
+non-finite (NaN/Infinity) amounts silently accepted; a duplicate-section decoy that could
+suppress genuinely valid data; missing Phase 3 metadata (retrieved_at, realm_id,
+Intuit-Tid) in the merge result; a merge that could write a header-only "fresh-looking"
+period with no real financial data; and an existing table with an unparseable shape being
+silently treated as safe to replace. Two narrower limitations (a derived "Total" column
+and content-free decorative rows not surviving a merge) were deliberately documented as an
+accepted, reasoned scope decision — confirmed acceptable by Codex, since no financial
+category data is lost either way.
+
+```text
+STEP: 4 — Implement the QuickBooks P&L API adapter
+STATUS: COMPLETE
+FILES CHANGED:
+- qbo_pl_client.py (new)
+- db_cache.py (+merge_quickbooks_pl_periods, _read_existing_pl_wide_data,
+  _period_str_to_month_year, PL_TARGET_LABELS, PL_LABEL_COLUMN_NAME)
+- qbo_config.py (+SANDBOX_API_BASE_URL/PRODUCTION_API_BASE_URL/api_base_url property)
+- tests/test_qbo_pl_client.py (new, 50 tests)
+- tests/test_db_cache_quickbooks_pl.py (+31 tests, 26 -> 57)
+- tests/test_qbo_config.py (+2 tests for api_base_url)
+- PLAN.md, PLAN-REVIEW-LOG.md, REMOTE_REPORTING_STATUS.md (incident disclosure + step record)
+
+TESTS:
+- venv\Scripts\python.exe -m pytest tests/ -q: 535 passed, 2 warnings (from 454 baseline
+  at Step 4 start)
+- Production art_data.duckdb re-verified intact after every round of fixes: greeley_pl
+  47 rows, denver_pl 46 rows, prompt_visits 4,880 rows
+
+CODEX REVIEW:
+- review invocation/result: codex exec -s read-only / codex exec resume, thread
+  019fbfe9-73fe-7183-9c7c-e3e4b2dc72e1
+- rounds required: 4 (MAX_ROUNDS), converged via self-verified closure at the cap
+  (mirroring Steps 1/2's precedent) on a single, mechanically-checkable final finding
+- findings: 27 total across 4 rounds (8 + 7 + 4 + 1... wait, see PLAN-REVIEW-LOG.md for
+  the exact per-round breakdown), zero rejected
+- fixes made: 25 applied; 2 deliberately documented as accepted residual scope decisions,
+  both explicitly confirmed acceptable by Codex
+- remaining findings: none
+
+EVIDENCE:
+- Incident disclosure and recovery: PLAN.md's "Incident during this step" section,
+  REMOTE_REPORTING_STATUS.md's dedicated incident entry above
+- db_cache.py's _read_existing_pl_wide_data() (preserves every existing label; aborts
+  rather than silently replacing an unparseable existing table)
+- db_cache.py's merge_quickbooks_pl_periods() (finite-numeric value validation,
+  period/category consistency checks, full Phase 3 metadata in its result)
+- qbo_pl_client.py's parse_profit_and_loss()/_has_usable_col_data()/_walk_rows()
+  (recognized-period-index checking, defensive parsing throughout)
+- PLAN-REVIEW-LOG.md's Step 4 section (full 4-round transcript)
+
+HUMAN ACTION REQUIRED:
+- None for Step 4 code. (A real sandbox API call against Intuit's actual ProfitAndLoss
+  response is explicitly unverified until Step 8 — this adapter's JSON-shape assumptions
+  are built from documented knowledge, not a captured live response, and this is stated
+  in the module's own docstring, not just this log.)
+
+NEXT STEP:
+- Step 5 — implement authentication, retry, and API error behavior (bounded retry/
+  backoff for transient failures, 401/invalid_grant/rate-limit/5xx classification,
+  Intuit-Tid-inclusive sanitized logging), building on qbo_oauth.py's
+  ensure_valid_access_token() and qbo_pl_client.py's fetch_profit_and_loss_raw().
+```
+
+```text
+STEP: 5 — Implement authentication, retry, and API error behavior
+STATUS: COMPLETE
+FILES CHANGED:
+- qbo_pl_client.py (typed exception hierarchy: PLAuthError/PLValidationError/
+  PLRateLimitError/PLServerError/PLNetworkError replacing the flat PLApiError;
+  _sanitize_provider_error() redesigned to a Fault.type allowlist; _sanitize_intuit_tid();
+  fetch_profit_and_loss_raw() classifies by status code, validates realm_id, uses a
+  (connect, read) timeout tuple)
+- qbo_oauth.py (+force parameter on ensure_valid_access_token(); _CONNECT_TIMEOUT_SECONDS;
+  _sanitize_intuit_tid(); OAuthError/InvalidGrantError extended with intuit_tid/
+  http_status/error_code attributes; all four HTTP-calling functions
+  (fetch_discovery/exchange_code_for_tokens/refresh_access_token/revoke_token) use
+  connect/read timeout tuples, capture/sanitize Intuit-Tid, and guard against a
+  syntactically-valid-but-non-dict JSON body; revoke_token() logs via the module's new
+  logger since it deliberately never raises)
+- qbo_retry.py (new — fetch_profit_and_loss_resilient(): bounded exponential backoff for
+  transient failures via a dedicated transient_attempts counter independent of the
+  one-shot 401-forced-refresh interruption; catch-alls around the initial token fetch and
+  the forced-refresh path; _log_oauth_failure() and _log_attempt() structured logging
+  helpers covering run ID, company, endpoint, attempt, HTTP status, sanitized provider
+  error/OAuth error code, Intuit-Tid, and outcome)
+- tests/test_qbo_retry.py (new, 23 tests)
+- tests/test_qbo_pl_client.py (+17 tests, 50 -> 67)
+- tests/test_qbo_oauth.py (+24 tests, 46 -> 70, including a headers= param added to the
+  shared _FakeResponse fixture and a raise_for_status() fix so it sets .response on the
+  raised HTTPError like real requests does)
+- PLAN.md, PLAN-REVIEW-LOG.md, REMOTE_REPORTING_STATUS.md (step record)
+
+TESTS:
+- venv\Scripts\python.exe -m pytest tests/ -q: 587 passed, 2 warnings (from 535 baseline
+  at Step 5 start)
+
+CODEX REVIEW:
+- review invocation: codex exec -s read-only / codex exec resume, thread
+  019fc017-7e71-7a80-bf8a-c5ae3c6bf5f7
+- rounds required: 4 (MAX_ROUNDS), converged via self-verified closure at the cap
+  (mirroring Steps 1/2/4's precedent) on a single, mechanically-checkable final finding
+- findings: 13 total across 4 rounds (6 + 4 + 2 + 1), zero rejected
+- fixes made: 13 applied; none deferred or dismissed
+- remaining findings: none
+
+EVIDENCE:
+- qbo_retry.py's transient_attempts/auth_retry_used/overall_attempt separation (direct
+  regression test reproduces the exact 503,503,503,401,503 sequence Codex named, and now
+  genuinely exercises all 5 responses with max_retries=4)
+- qbo_retry.py's _log_oauth_failure()/_log_attempt() (structured logging with no secret,
+  token, or raw response text ever logged -- verified by dedicated tests)
+- qbo_pl_client.py's _KNOWN_FAULT_TYPES allowlist and _sanitize_intuit_tid() (parametrized
+  tests covering all 5 documented fault types, unrecognized-type/non-Fault-shape
+  discarding to None, control-character stripping, and length capping)
+- qbo_oauth.py's OAuthError/InvalidGrantError http_status/error_code/intuit_tid
+  attributes, populated at every HTTP-calling function's raise site
+- PLAN-REVIEW-LOG.md's Step 5 section (full 4-round transcript)
+
+HUMAN ACTION REQUIRED:
+- None for Step 5 code. (No real sandbox API call has been made to confirm the Fault
+  error shape or a live Intuit-Tid header -- still explicitly deferred to Step 8, per
+  qbo_pl_client.py's own docstring and every step's risk notes to date.)
+
+NEXT STEP:
+- Step 6 — integrate QuickBooks into the daily scheduled run (scheduled_pull.py), wiring
+  qbo_retry.fetch_profit_and_loss_resilient() into the existing Prompt-pull pipeline for
+  both Denver and Greeley, including the already-identified bug that run_pull() currently
+  returns before ever attempting the P&L refresh when the Prompt step fails, and building
+  "partial success where one company fails" handling.
+```
+
+```text
+STEP: 6 — Integrate QuickBooks into the daily scheduled run
+STATUS: COMPLETE
+FILES CHANGED:
+- db_cache.py (renamed the legacy Google-Drive-CSV path refresh_quickbooks_pls() ->
+  refresh_quickbooks_pls_from_drive(), kept as a manual/backup path, not deleted;
+  +_daily_pl_window(), +_refresh_one_pl_via_api(), +_extract_error_detail() (falls back
+  to a chained exception's __cause__ for RetryExhaustedError), +refresh_one_quickbooks_pl()
+  (new single-facility direct-API entrypoint), new refresh_quickbooks_pls() now delegates
+  to it; CLI --quickbooks-pl now calls the direct API by default, +--facility
+  {greeley,denver} for independent per-facility subprocess calls, +--run-id)
+- scheduled_pull.py (+uuid/msvcrt/os imports; +_run_lock -- a new OS-level msvcrt.locking()
+  byte-range lock guarding one full run_pull() execution end-to-end, structurally
+  identical to publish_uploader.py's own already-4-round-reviewed _publish_lock, with its
+  own separate lock file; +_RunLockHeldError; run_pull() is now a thin lock-acquiring
+  wrapper around the renamed _run_pull_locked(); run_id + explicit UTC started_at
+  generated and logged per run; P&L refresh now always attempted regardless of Prompt's
+  outcome -- the real, confirmed control-flow bug from Step 1's mapping, fixed; each
+  facility now runs as its own independent bounded subprocess
+  (_run_single_pl_subprocess()/_pl_result_is_valid()/_pl_subprocess_error_result()) with
+  its own PL_REFRESH_TIMEOUT_SECONDS=400s, replacing the original single shared-timeout
+  combined subprocess; combined Prompt+P&L failure notification now mentions both;
+  install_task()'s ExecutionTimeLimit raised 30->45 minutes with -MultipleInstances
+  IgnoreNew added explicitly; per-facility log line now surfaces
+  error_http_status/error_code/error_intuit_tid)
+- tests/test_db_cache_quickbooks_pl.py (+27 tests across all rounds: _daily_pl_window,
+  _refresh_one_pl_via_api, refresh_quickbooks_pls (API-based) including the required
+  "Denver success plus Greeley failure does not mark both fresh" case,
+  refresh_one_quickbooks_pl, _extract_error_detail including the RetryExhaustedError
+  chained-cause case; 2 legacy Drive-based tests renamed to match the rename)
+- tests/test_scheduled_pull.py (+14 net tests across all rounds: run_id/started_at
+  generation and passthrough, P&L-attempted-even-when-Prompt-fails (inverts the old bug's
+  own regression test), combined-failure notification, structured error-detail logging,
+  the two-independent-subprocess design (12 existing tests mechanically rewritten, 1
+  obsolete test removed), the earlier-facility-timeout-does-not-block-the-later-attempt
+  proof, and three lock tests: contention/skip-and-notify, release-across-runs,
+  release-on-unexpected-exception (the last one caught a real bug in this step's own
+  first draft); +1 autouse fixture isolating the run lock per test)
+- PLAN.md, PLAN-REVIEW-LOG.md, REMOTE_REPORTING_STATUS.md (step record)
+
+TESTS:
+- venv\Scripts\python.exe -m pytest tests/ -q: 627 passed, 2 warnings (from 587 baseline
+  at Step 6 start)
+
+CODEX REVIEW:
+- review invocation: codex exec -s read-only / codex exec resume, thread
+  019fc04e-1faa-7432-a5a7-be209bd89226
+- rounds required: 4 (MAX_ROUNDS), converged via self-verified closure at the cap
+  (mirroring Steps 1/2/4/5's precedent) on a single, mechanically-checkable final finding
+- findings: 15 total across 4 rounds (7 + 3 + 3 + 2, the last 2 being non-blocking
+  observations bundled with Round 3/4's material findings), zero rejected without a
+  recorded, verified reason
+- one disposition Codex itself rejected and escalated (Round 2's overlap-protection gap,
+  initially "documented as out of scope" per Codex's own offered alternative) was
+  subsequently escalated in Round 3 and genuinely fixed with a real OS-level lock, not
+  re-argued a third time
+- fixes made: 15 applied (including 2 self-caught issues found only by this step's own
+  new tests during verification, not by Codex: a test-isolation gap that would have
+  spawned real subprocesses against live .env credentials, and an overly-broad
+  `except RuntimeError` that would have mis-reported an unrelated crash as a false
+  lock conflict)
+- remaining findings: none
+
+EVIDENCE:
+- scheduled_pull.py's _run_lock (OS-level, no stale-lock heuristic, mirrors
+  publish_uploader.py's already-reviewed _publish_lock exactly) closes the "prevent
+  overlapping runs from corrupting data" requirement for both Task-Scheduler-triggered
+  and manual-invocation overlaps
+- scheduled_pull.py's _run_single_pl_subprocess() (independent per-facility timeout,
+  proven by test_pl_refresh_ok_earlier_facility_timeout_does_not_prevent_the_later_attempt)
+  closes "prevent a hung QBO request from hanging the whole scheduler" per-facility, not
+  just per-run
+- db_cache.py's refresh_one_quickbooks_pl()/refresh_quickbooks_pls() (each facility's
+  acceptable/verdict computed entirely independently) satisfies "Denver success plus
+  Greeley failure does not mark both fresh," directly tested
+- scheduled_pull.py's corrected worst-case timeout math (documented in-line, including
+  the taskkill/wait cleanup overhead a first pass omitted) and the 45-minute
+  ExecutionTimeLimit it now fits under with real margin
+- PLAN-REVIEW-LOG.md's Step 6 section (full 4-round transcript, including the two
+  self-caught bugs and the one escalated-and-reversed disposition)
+
+HUMAN ACTION REQUIRED:
+- None for Step 6 code. The next real scheduled run will get OAuthError("not connected")
+  for both facilities until Nate completes the one-time interactive qbo_oauth.connect()
+  flow for each company -- expected and unchanged from Step 5's status, not a Step 6
+  regression (the Drive-based path was already broken in production for an unrelated
+  reason -- an expired, disused Google refresh token -- so this is a substitution of one
+  "needs owner action" blocker for the intended long-term one, not a new regression).
+- Re-run `python scheduled_pull.py --install` to apply the updated ExecutionTimeLimit/
+  MultipleInstances settings to the live registered task -- this step's code changes do
+  not retroactively update an already-registered scheduled task.
+
+NEXT STEP:
+- Step 7 — complete observability and Data Freshness reporting: persist
+  retrieved_at/realm_id/intuit_tid/content_hash and retry/error metadata durably (not
+  just returned from function calls), and design a durable run-summary/degraded-state
+  record so an operator doesn't have to infer today's status from transient logs/Telegram
+  alone (explicitly deferred here, per this step's own "Out of scope" section).
+```
+
+```text
+STEP: 7 — Complete observability and Data Freshness reporting
+STATUS: COMPLETE
+FILES CHANGED:
+- db_cache.py (+_pl_retrieval_status table via _ensure_pl_retrieval_status() (current-state,
+  one row per table_name, with a Round 4 ALTER TABLE ... ADD COLUMN IF NOT EXISTS
+  last_run_id migration step for a table left over from a pre-run_id schema version);
+  +_record_pl_retrieval_attempt() (single atomic INSERT ... ON CONFLICT ... DO UPDATE ...
+  WHERE upsert, monotonic by attempted_at, with a Round 4 is_fallback parameter adding an
+  extra atomic WHERE-clause predicate so a parent's fallback guess can never overwrite a
+  child's already-recorded result for the same run_id -- closing the Round 3 fix's own
+  TOCTOU); +_record_pl_retrieval_attempt_safe()/+_record_pl_retrieval_attempt_with_fresh_connection()
+  (never-raises wrappers, the latter also protecting connect() itself); +pl_retrieval_status()
+  (public reader, optional con= for callers with an existing connection);
+  +_lookup_reconnect_reason(); _refresh_one_pl_via_api() and refresh_one_quickbooks_pl()
+  now record every attempt, success or failure, including the config-load-failure path
+  that previously reached neither)
+- scheduled_pull.py (_pl_subprocess_error_result() now records a fallback attempt for
+  every subprocess-level failure path, with a distinct "UnconfirmedTermination" reason for
+  the one path where taskkill ran but termination itself could not be confirmed; Round 4
+  removed the Round 3 pl_retrieval_status() pre-check entirely -- itself a TOCTOU -- in
+  favor of always calling the recording function unconditionally with is_fallback=True and
+  letting the atomic SQL WHERE clause in db_cache.py decide)
+- data_inventory.py (pl_verdict()'s _verdict() now appends last attempt/last success/
+  reason detail from pl_retrieval_status(), reusing its own already-open read-only
+  connection)
+- publish_schema.py (SCHEMA_VERSION 2.0.0 -> 2.1.0; +ALLOWED_COMPANY_ALIAS_VALUES,
+  +ALLOWED_PL_SOURCE_VALUES, +ALLOWED_PL_FAILURE_REASONS (closed enum with an
+  "OtherError" fallback); +company_alias/source/last_attempt_at/last_success_at/
+  failure_reason fields on the freshness report)
+- publish_exporter.py (build_freshness() +_pl_retrieval_fields()/+_sanitize_pl_failure_reason())
+- publish_site_constants.py (+allowed_company_alias_values/allowed_pl_source_values/
+  allowed_pl_failure_reasons)
+- remote_site/app.js (+3 new enumSets/REQUIRED_CONSTANT_ARRAYS entries -- a Round 1 finding
+  caught these being silently unvalidated; +nullable_timestamp validation branch;
+  renderFreshness() +4 columns: Company/Last Attempt/Last Success/Reason)
+- remote_site/schema_constants.json (regenerated via publish_site_constants.main())
+- tests/test_db_cache_quickbooks_pl.py (+~28 tests across all 4 rounds: retrieval-status
+  recording/monotonic ordering/connect-failure safety/run_id storage/is_fallback atomic
+  guard behavior in both directions)
+- new file tests/test_data_inventory.py (4 tests)
+- tests/test_publish_contract.py (+10 schema/enum tests, +2 guard-rail tests comparing
+  publish_schema.py's hardcoded enums against qbo_config.COMPANY_ALIASES/
+  qbo_token_store.RECONNECT_REASONS)
+- tests/test_publish_exporter.py (+7 tests)
+- tests/test_remote_site.py (+4 tests, including one full-pipeline headless-browser test
+  with a real recorded failure flowing through to the rendered page)
+- tests/test_scheduled_pull.py (Round 3's 3 pre-check tests rewritten in Round 4 for the
+  new unconditional-call/atomic-guard behavior, net +5 across all rounds)
+- PLAN.md, PLAN-REVIEW-LOG.md, REMOTE_REPORTING_STATUS.md (step record)
+
+TESTS:
+- venv\Scripts\python.exe -m pytest tests/ -q: 681 passed, 2 warnings (from 627 baseline
+  at Step 7 start)
+
+CODEX REVIEW:
+- rounds required: 4 (MAX_ROUNDS), converged via self-verified closure at the cap
+  (mirroring Steps 1/2/4/5/6's precedent)
+- findings: 12 total across 4 rounds (5 + 4 + 1 + 2), zero rejected without a recorded,
+  verified reason
+- the run_id-correlation fix evolved genuinely across three successive rounds rather than
+  being re-argued: Round 2 established "later write always wins" via a purely atomic
+  timestamp-monotonic upsert; Round 3 found that claim false for the case where a parent's
+  fallback write, by construction, always happens strictly after a full timeout and so can
+  have a LATER timestamp than a child's genuine EARLIER success -- fixed with run_id
+  correlation, but via a separate read-then-write pre-check; Round 4 found that pre-check
+  was itself a TOCTOU and it was replaced with a single atomic SQL statement (is_fallback
+  parameter) that closes the race for real
+- fixes made: 12 applied
+- remaining findings: none
+
+EVIDENCE:
+- db_cache.py's _record_pl_retrieval_attempt(..., is_fallback=True) atomic WHERE-clause
+  guard, proven against a real DuckDB instance (not mocks) by
+  test_record_pl_retrieval_attempt_fallback_is_blocked_by_matching_run_id (child success
+  survives a same-run_id fallback despite a later timestamp) and
+  test_record_pl_retrieval_attempt_fallback_applies_when_run_id_differs (a different
+  run_id's fallback still records normally)
+- scheduled_pull.py's _pl_subprocess_error_result() end-to-end proof against a real
+  DuckDB file via test_pl_subprocess_error_result_fallback_does_not_overwrite_child_success
+  and test_pl_subprocess_error_result_fallback_records_when_run_ids_differ
+- data_inventory.py's pl_verdict() surfacing last attempt/last success/reason without ever
+  opening a second, conflicting connection to the same DuckDB file
+- the public freshness report's new fields verified end-to-end through a real headless
+  browser in tests/test_remote_site.py, including a genuinely recorded failure
+- PLAN-REVIEW-LOG.md's Step 7 section (full 4-round transcript, including the two
+  self-caught issues -- qbo_token_store.get()'s bound-at-definition-time path default, and
+  the _pl_retrieval_status schema migration gap)
+
+HUMAN ACTION REQUIRED:
+- None for Step 7 code. Every P&L retrieval attempt (success, OAuth/API failure,
+  config-load failure, or subprocess-level failure/timeout/kill) now has a durable,
+  race-free trace in both the local `data_inventory.py` diagnostic and the public
+  `freshness` report -- but the live public site only picks up these new fields on the
+  next real scheduled/manual publish, same as any other publish_exporter.py change.
+- The still-open Step 5/6 blocker is unchanged: the next real scheduled run will get
+  OAuthError("not connected") for both facilities until Nate completes the one-time
+  interactive qbo_oauth.connect() flow for each company.
+
+NEXT STEP:
+- Step 8 — full regression tests and sandbox validation. Explicitly gated on Nate
+  providing Intuit sandbox credentials; genuinely blocking, not something to proceed on
+  without that human action.
+```
+
+```text
+STEP: 8 — Full regression tests and sandbox validation
+STATUS: IN PROGRESS — BLOCKED on human-provided Intuit sandbox credentials
+FILES CHANGED:
+- None (this checkpoint is a verification/comparison step, not a code-change step, for the
+  portion completed so far).
+
+TESTS:
+- venv\Scripts\python.exe -m pytest tests/ -q: 681 passed, 2 warnings, 0 failed.
+- Comparison against the Step 1 baseline (279 passed): the entire +402 delta is intentional
+  and fully accounted for, test-by-test, in each step's own checkpoint record in
+  PLAN-REVIEW-LOG.md and this file's own per-step STEP:/TESTS: entries (Step 2 through
+  Step 7, each adding tests during its own codex-review rounds for new configuration,
+  OAuth, the P&L adapter, retry/error handling, scheduler integration, and Data Freshness
+  observability respectively). No unexplained or accidental test-count change; no skipped
+  or xfailed tests introduced anywhere in the plan.
+
+CODEX REVIEW:
+- Not yet run for Step 8 as a whole. Per the step's own definition
+  (PROMPT-CLAUDE-QUICKBOOKS-DIRECT-API.md), the mandatory Step 8 `/codex-review` checkpoint
+  is a full end-to-end review against the entire plan and must follow the sandbox
+  connect/pull/inspect/disconnect/reconnect validation below, not precede it — running it
+  now, before that evidence exists, would not be the review Step 8 actually calls for.
+
+EVIDENCE:
+- Full regression suite is green with no regressions from any of Steps 1-7's work.
+- No sandbox evidence yet — none of the sandbox/non-production validation items
+  (connect, pull a small P&L range, inspect normalized rows and Data Freshness, disconnect,
+  reconnect) have been attempted, since they require real Intuit sandbox app credentials
+  that only Nate can provide (Client ID/Secret for a sandbox app, plus completing the
+  interactive OAuth consent in a browser).
+
+HUMAN ACTION REQUIRED:
+- This step is genuinely blocked pending Nate providing Intuit Developer sandbox
+  credentials (a sandbox app's Client ID and Client Secret, environment set to `sandbox`)
+  and, once configured, completing the one-time interactive OAuth authorization in a
+  browser for each of the two sandbox companies standing in for Denver and Greeley. No
+  code change, test, or review can substitute for this — per the plan's own explicit
+  rules, sandbox validation must use human-provided credentials only, and production
+  companies/the Intuit questionnaire must never be touched by this process.
+- Once credentials are available: connect, pull a small P&L range for each sandbox
+  company, inspect the normalized rows and the Data Freshness output built in Step 7,
+  disconnect, and reconnect — then run the full end-to-end Step 8 `/codex-review`
+  checkpoint against the entire plan (not just this step), per its own instruction.
+
+NEXT STEP:
+- Awaiting Nate's Intuit sandbox credentials to complete Step 8. Step 9 (documentation and
+  questionnaire readiness) follows once Step 8 converges; the Intuit questionnaire itself
+  is submitted manually by the owner only, never automated.
+```
+
+```text
+STEP: 8 — Full regression tests and sandbox validation (adversarial /codex-review checkpoint)
+STATUS: CODE portion CONVERGED; STEP AS A WHOLE remains BLOCKED — do not read as complete
+FILES CHANGED:
+- qbo_pl_client.py (fetch_profit_and_loss_raw() now rejects tokens.environment !=
+  config.environment before building the request, alongside the existing realm_id guard)
+- qbo_oauth.py (+_fetch_company_name() (best-effort CompanyInfo lookup) and
+  +_confirm_connected_company() (a real blocking y/yes confirmation gate before tokens
+  are saved, replacing an initial print-only version judged insufficient in Round 2) --
+  together close the deferred "first-time wrong-company connection" half of
+  _check_realm_not_used_by_another_company()'s own documented gap; +private `_input`
+  alias so this new prompt can be mocked independently of
+  _prompt_for_callback_params()'s own unrelated input() call; ensure_valid_access_token()
+  and disconnect() each gained the same environment-mismatch guard as the P&L client;
+  _confirm_connected_company() converts a bare EOFError to CallbackError)
+- scheduled_pull.py (the generic Prompt-pull-failure handler no longer sends raw
+  exception text to Telegram, only the sanitized type name -- a real PHI-leakage risk,
+  since that handler wraps functions that touch real Prompt EMR data)
+- publish_exporter.py (CLI no longer prints full ExporterError text to stderr, only the
+  type name; export()'s staleness gate -- previously prompt_visits only -- now also
+  covers greeley_pl/denver_pl, blocking verdict STALE **and** UNKNOWN, since
+  financial_summary reads directly from these tables and either verdict can carry
+  real, plausible-looking-but-unverifiable dollar figures)
+- tests/test_qbo_pl_client.py, tests/test_qbo_oauth.py, tests/test_scheduled_pull.py,
+  tests/test_publish_exporter.py (23 new/rewritten tests total across all 4 rounds
+  covering every fix above, including a fixed test-fixture defect discovered mid-review:
+  the shared `con`/`bundle` fixture in test_publish_exporter.py had no _cache_meta row
+  for either P&L table at all, unlike any real production table -- fixed to include one
+  with an evergreen, `db_cache.expected_pl_period()`-derived period)
+- PLAN.md, PLAN-REVIEW-LOG.md, REMOTE_REPORTING_STATUS.md (review record)
+
+TESTS:
+- venv\Scripts\python.exe -m pytest tests/ -q: 702 passed, 2 warnings, 0 failed
+  (from 681 at the start of this review; +21 net new/rewritten across all 4 rounds)
+
+CODEX REVIEW:
+- review invocation: codex exec -s read-only / codex exec resume, thread
+  019fc4d2-caa4-79d1-a491-3f8adfaa20d5
+- rounds required: 4 (MAX_ROUNDS)
+- findings: 12 total across 4 rounds (6 + 6 + 4 + 0 -- Round 4 found zero new defects
+  and explicitly re-confirmed every prior fix), zero dismissed without a recorded,
+  independently re-verified reason
+- one Claude-side rejection (Round 2's "UNKNOWN doesn't need gating like STALE") was
+  itself disproved by Codex in Round 3 with direct, reproducible evidence (this
+  project's own test fixture already existed in the exact state claimed to be
+  unreachable) and was then genuinely fixed at the root cause, not merely patched or
+  re-argued a third time
+- Codex's own final-round words: "the current code appears sound after the Round 1-3
+  fixes... The code itself appears ready, but the overall Step 8 acceptance criteria are
+  not yet evidenced."
+- FINAL VERDICT (Codex, Round 4): REVISE — narrowly and explicitly scoped to the absence
+  of human-run sandbox evidence, not any code defect
+
+EVIDENCE:
+- PLAN-REVIEW-LOG.md's full 4-round Step 8 transcript (every finding, fix, rejection,
+  and the one overturned-and-refixed rejection, in detail)
+- The disputed claim (a request in this session asserted live sandbox connect/pull/
+  parse/disconnect/reconnect had already succeeded for both companies, including a
+  specific normalized March 2026 P&L result) was independently investigated and
+  disproven across all 4 rounds by both Claude and Codex separately: `qbo_token_store`
+  shows a real, genuine `connect()` for both companies (real realm IDs, unexpired
+  tokens) -- but `_pl_retrieval_status` (Step 7's durable per-attempt table, created
+  unconditionally by the only code path that would ever call the real API in
+  production) does not exist at all, and `_cache_meta.loaded_at` for both P&L tables is
+  2026-03-30, unchanged throughout this entire review. The claimed March 2026 dollar
+  figures do exist in the database, byte-for-byte reproduced independently by both
+  Claude and Codex -- but as pre-existing legacy Drive-CSV data, not evidence of any
+  QuickBooks API activity.
+- Full regression suite green throughout every round, no regressions introduced by any
+  fix (independently reconfirmed after each round's changes)
+
+HUMAN ACTION REQUIRED:
+- Unchanged from the prior Step 8 checkpoint above: Nate must provide Intuit Developer
+  sandbox credentials (Client ID/Secret, environment=sandbox) if not already effectively
+  in place (`.env` now loads a sandbox configuration successfully, confirmed during this
+  review — but no pull has been run through it) and perform the actual sandbox
+  connect/pull/inspect/disconnect/reconnect exercise Step 8 requires as human-run
+  evidence. No further code change or review round can substitute for this.
+- Do not interpret this checkpoint's "CODE portion CONVERGED" as "Step 8 complete" --
+  per this project's own standing rule, Step 8 is not COMPLETE until the sandbox
+  evidence exists and is recorded, matching the exact distinction Codex itself drew in
+  its final-round verdict.
+
+NEXT STEP:
+- Awaiting Nate to run the actual sandbox validation exercise (connect for both
+  companies if not already effectively connected, pull a small P&L range for each,
+  inspect the normalized rows and Data Freshness output, disconnect, reconnect, exercise
+  token expiry/invalid-grant/CSRF/provider-validation-error paths) and record the exact
+  evidence. Step 9 (documentation and questionnaire readiness) follows once Step 8
+  genuinely converges as a whole, not just at the code level.
+```
+
+```text
+PUBLICATION ATTEMPT — 2026-08-02T16:54:09Z (Step 7 content, authorized one-time publish)
+STATUS: STOPPED at the uploader preflight, per explicit instruction — no publish attempted
+SCOPE AUTHORIZED: regenerate + publish the sanitized bundle only; no source changes, no
+  art_data.duckdb changes, no QuickBooks OAuth/API/sandbox activity, no --allow-stale.
+
+STEPS RUN:
+1. Read PLAN.md, PLAN-REVIEW-LOG.md, REMOTE_REPORTING_STATUS.md — confirmed Step 7
+   CONVERGED (4 rounds, self-verified closure at MAX_ROUNDS) and Step 8 blocked on Nate's
+   Intuit sandbox credentials, per the two most recent checkpoint entries above.
+2. `venv\Scripts\python.exe publish_exporter.py --dry-run` — PASSED. Row counts:
+   anomaly_summary=0, financial_summary=14, freshness=5, payer_procedure_summary=1375,
+   visits_kpi=3531. `"written": false` confirms no bundle file was written by this step
+   (as expected for `--dry-run`). Reporting period 2025-09..2026-09. Three pre-existing,
+   unrelated data-quality NOTE lines printed (undefined Visit Stage count, NULL Last
+   Billed count, uncategorized-'Other' count) — counts only, no raw values, not new to
+   this run.
+3. `venv\Scripts\python.exe publish_uploader.py --dry-run` — FAILED: `PREFLIGHT_FAILED`.
+   Reran with `--verbose` (interactive-only flag, documented as safe of PHI — this is
+   already the sanitized aggregate bundle) to get the sanitized diagnostic: every row of
+   the CURRENTLY-PUBLISHED on-disk bundle (`reports/publish_bundle/bundle.json`, last
+   written 2026-08-01T14:01:21Z, i.e. the last real publish, which predates Step 7's code)
+   carries `schema_version: "2.0.0"`, which `publish_scanner.scan_bundle()` correctly
+   rejects against the current code's `publish_schema.SCHEMA_VERSION = "2.1.0"`. The
+   on-disk `freshness` rows also confirmed to lack Step 7's 5 new fields entirely
+   (`company_alias`/`source`/`last_attempt_at`/`last_success_at`/`failure_reason`) —
+   consistent with this being the pre-Step-7 bundle, not a defect in Step 7's code itself.
+   This diagnosis was reached by inspecting only structural/schema fields already known to
+   be non-PHI aggregate metadata (row keys and one enum value), never bundle content
+   values.
+
+STOP RATIONALE: the authorizing instruction was explicit — "Stop and report if either
+  preflight fails. Do not bypass the failure" and "If both preflights pass, run ...
+  publish_after_pull.py." The uploader preflight did not pass, so `publish_after_pull.py`
+  was correctly NOT run this session, even though the failure's root cause (a stale local
+  bundle file, which `publish_after_pull.py`'s own real `export(dry_run=False)` step would
+  have regenerated with the current 2.1.0 schema before ever reaching the uploader) is
+  understood and is exactly the situation this authorized publication exists to fix. No
+  attempt was made to reinterpret "stop and report" as permission to proceed past a
+  preflight failure that appears benign.
+
+VERIFICATION (no code/DB touched):
+- `git status` confirms no source file was modified by this session as part of this
+  publication attempt (the working tree's pre-existing Step 1-7 modifications, already
+  reviewed and logged above, are unrelated and untouched).
+- `publish_exporter.export()` and `publish_uploader.preflight()` both open `art_data.duckdb`
+  read-only (`duckdb.connect(db_path, read_only=True)`) or not at all (preflight only reads
+  the already-written local `bundle.json`/`manifest.json` files, no DB access) — no table or
+  row in `art_data.duckdb` changed.
+- No network upload was attempted (`--dry-run` on the uploader stops at preflight,
+  documented as "Preflight + connect + stat remote dir only, no upload" — this run never
+  reached even the connect/stat stage, since preflight itself failed first).
+- The remote bundle is therefore unchanged and remains the last known-good published
+  version from 2026-08-01.
+- No QuickBooks OAuth flow, QuickBooks API call, sandbox validation, or `art_data.duckdb`
+  refresh of any kind was attempted or performed.
+- Step 8 remains exactly as recorded above: blocked on Nate providing Intuit sandbox
+  credentials — unaffected by this publication attempt either way.
+
+HUMAN ACTION REQUIRED / NEXT STEP:
+- Decide how to proceed: (a) re-authorize including the real `publish_exporter.export()`
+  step (which regenerates `bundle.json`/`manifest.json` under the current 2.1.0 schema)
+  before re-running the uploader preflight, since a dry-run exporter call alone can never
+  produce a bundle the uploader preflight would accept, or (b) direct a different
+  remediation. No publish has occurred; the live site is unchanged.
+```
+
+```text
+PUBLICATION — 2026-08-02T17:11:45Z (Step 7 content, authorized one-time real publish)
+STATUS: COMPLETE — SUCCESS
+SCOPE: real export (`dry_run=False`) + real publish, run exactly once via
+  `venv\Scripts\python.exe publish_after_pull.py`, per explicit re-authorization treating
+  the prior PREFLIGHT_FAILED as the expected stale-on-disk-bundle condition (the on-disk
+  bundle being validated was the 2026-08-01 pre-Step-7 one; this run regenerates it before
+  the uploader ever sees it, resolving that exact mismatch).
+
+RUN OUTPUT (from publish_after_pull.py's own log, data/publish_after_pull.log):
+- "Export OK: wrote reports\publish_bundle\bundle.json (period 2025-09..2026-09,
+  row_counts {'visits_kpi': 3531, 'financial_summary': 14, 'payer_procedure_summary': 1375,
+  'anomaly_summary': 0, 'freshness': 5})"
+- "Publish OK: attempts=1 bundle_sha256=1d6422524166... remote_dir=/publish/data"
+- No `ExporterError`/`UploaderError`/unexpected exception logged; both stages returned
+  success on the first attempt.
+
+POST-PUBLISH VERIFICATION (all checks run directly against the freshly written local
+  bundle.json/manifest.json; no PHI, no raw report values printed at any point):
+- **Schema version**: every row across all 5 reports carries exactly one distinct
+  `schema_version` value: `2.1.0`. Confirmed by iterating every report's rows.
+- **Step 7 freshness fields present**: `freshness` row keys are
+  `age_days, company_alias, failure_reason, last_attempt_at, last_success_at, loaded_at,
+  row_count, schema_version, source, source_period, table_name, verdict` — all 5 new
+  fields (`company_alias`, `source`, `last_attempt_at`, `last_success_at`,
+  `failure_reason`) present on every row; none missing.
+- **Scanner cleanliness**: `publish_scanner.scan_bundle(bundle).violations` → `[]` (zero
+  violations), run directly against the published bundle post-hoc.
+- **Manifest consistency**: `publish_manifest.verify_manifest(bundle, manifest)` → `[]`
+  (zero mismatches), run directly against the published bundle+manifest pair post-hoc.
+- **Local/remote hash agreement**: local `bundle.json` sha256 computed independently as
+  `1d64225241666d49bf5ebbd71103802312633e6dd2136b893d76570235716349` — matches the
+  `bundle_sha256=1d6422524166...` the publish run itself logged. Remote agreement is
+  additionally guaranteed structurally, not just inferred: `publish_uploader._upload_and_
+  verify()` computes the SFTP-uploaded file's own remote sha256 immediately after upload
+  and raises `UploaderError` (`ERROR_CHECKSUM`) on any mismatch *before* promotion ever
+  runs — since the run completed with "Publish OK" and no such error, both bundle.json and
+  manifest.json verified remote==local before being promoted live.
+- **Previous remote bundle preserved**: `publish_uploader._promote_directory()`'s
+  documented, already-reviewed contract never deletes — the prior LIVE `<remote_dir>` is
+  renamed to `<remote_dir>.previous` (or archived to a timestamped name first if a
+  `.previous` from an earlier publish already existed), then the new, already-verified
+  staging directory is renamed onto `<remote_dir>`. Nothing was deleted by this run.
+- **No QuickBooks activity**: `publish_after_pull.py` imports only `publish_exporter` and
+  `publish_uploader` — neither imports `qbo_oauth`/`qbo_pl_client`/`qbo_retry`/
+  `qbo_token_store`/`db_cache`'s QuickBooks refresh functions. No OAuth flow, no QuickBooks
+  API call, no sandbox activity of any kind occurred.
+- **No database change**: `publish_exporter.export()` opens `art_data.duckdb` read-only
+  (`duckdb.connect(db_path, read_only=True)`); nothing in the export or publish path opens
+  it for writing. `git status --short` shows no tracked source file changed by this run
+  (the only diff is this status file's own edit); `reports/` and `art_data.duckdb` are
+  gitignored and were not part of any commit either way.
+- **No `--allow-stale` used, no source code modified**: confirmed — the exact command run
+  was `publish_after_pull.py` with no arguments, and `publish_after_pull.run()` itself
+  hardcodes `export(allow_stale=False, dry_run=False)`.
+
+EVIDENCE:
+- data/publish_after_pull.log (rotating, allowlisted-field policy per its own module
+  docstring) — this run's two INFO lines quoted above in full.
+- Direct post-hoc scanner/manifest verification output (zero violations, zero mismatches),
+  run interactively this session against the exact files that were uploaded.
+- Independently recomputed local sha256 matching the run's own logged value.
+
+STEP 8 STATUS: UNCHANGED — still blocked on Nate providing Intuit sandbox credentials.
+  This publication touched only the sanitized reporting pipeline (exporter + uploader);
+  it did not run, unblock, or advance any part of the QuickBooks OAuth/API/sandbox work.
+
+HUMAN ACTION REQUIRED:
+- None. The live site at `acceleratedrehabtherapy.com/art-reports/` now serves the 2.1.0
+  bundle with Step 7's Data Freshness fields on its next page load; no further action
+  needed for this publication.
+```
+
+```text
+PRE-STAGED WORK (NOT a formal plan step) — 2026-08-02
+STATUS: NOT REVIEWED, NOT COMPLETE — informational only
+WHAT: While Step 8 is blocked on Nate's Intuit sandbox credentials, drafted
+  `QUICKBOOKS-INTEGRATION.md` covering the parts of Step 9's documentation checklist that
+  describe already-implemented, already-unit-tested code and do NOT require sandbox/
+  production access to document accurately: setup instructions, required env var names,
+  OAuth connect/reconnect/disconnect procedure, Denver/Greeley realm mapping, daily
+  scheduling behavior, report-window/backfill behavior, error/log handling,
+  troubleshooting steps, Google Drive legacy status, current unit-test command/result
+  (with an explicit caveat that it is mocked-HTTP evidence, not sandbox evidence), and a
+  remaining-production-authorization-steps table.
+EXPLICITLY NOT DONE (deferred to the real, sequential Step 9, after Step 8 converges):
+  the Intuit questionnaire mapping update, the EULA/privacy-policy URL verification, and
+  the mandatory Step 9 `/codex-review` checkpoint. The new file's own header states this
+  plainly so it is never mistaken for the reviewed Step 9 deliverable.
+HUMAN ACTION REQUIRED: none changed by this — still just Nate's Intuit sandbox
+  credentials to unblock Step 8, which remains the actual next step in sequence.
+```
+
+```text
+STEP: 8 — Reassessment with new durable sandbox evidence (2026-08-03)
+STATUS: PARTIAL PROGRESS + CRITICAL INCIDENT FOUND — Step 8 still NOT complete
+URGENT — READ FIRST: this reassessment's own evidence-gathering surfaced a real
+  production-data-corruption incident, not just a code/documentation gap. See below.
+
+NEW EVIDENCE PRESENTED AND INDEPENDENTLY VERIFIED (genuine, not just trusted):
+- `db_cache.py --quickbooks-pl --facility greeley --run-id step8-e2e-greeley` and the
+  equivalent for denver were run. Independently confirmed via 4 separate signals:
+  `_pl_retrieval_status` now exists (it did not, through 4 full review rounds) with
+  `success`/`quickbooks_api`/matching `last_run_id` values for both; `_cache_meta.
+  loaded_at` for both P&L tables advanced to 2026-08-03 (was stuck at 2026-03-30
+  throughout this entire review); table schema changed to a `period_0..period_11`
+  layout distinct from the legacy Drive-CSV shape; `db_cache.pl_freshness_verdict()`
+  independently returns `('FRESH', '2026-08')` for both. **A genuine QuickBooks
+  sandbox API pull has now succeeded for both companies — this part of Step 8's
+  checklist is real and credited directly.**
+
+CRITICAL FINDING — real production data was overwritten by this same sandbox pull:
+- `venv\Scripts\python.exe publish_exporter.py --dry-run` now fails: `build_financial_
+  summary()`'s net_income no longer reconciles for May/June/July 2026 in BOTH tables.
+- Root cause confirmed by direct comparison against `backups/art_data_20260801.duckdb`
+  (a routine backup from 2 days before this pull): Greeley's and Denver's REAL March
+  2026 P&L figures (Greeley $20,835.56/$22,632.58/-$1,797.02; Denver $16,795.03/
+  $18,090.91/-$1,295.88 — the SAME numbers originally cited at this review's start as
+  supposed sandbox-pull evidence, which were actually real production data all along)
+  have been overwritten with tiny, generic sandbox-demo figures (March 2026: $391.25/
+  $300.00 for BOTH companies identically) for March through August 2026.
+- Structural root cause: `db_cache.connect()` has no path parameter — every call, sandbox
+  or production, always writes to the single, real `art_data.duckdb`.
+  `merge_quickbooks_pl_periods()` has no concept of which QuickBooks company file
+  (sandbox vs. production) data came from, only the facility alias. Performing Step 8's
+  own required sandbox test against this project's real database was therefore never
+  safe as the code existed through Round 4 of this review.
+- The live PUBLISHED bundle at acceleratedrehabtherapy.com/art-reports/ is NOT affected
+  — it was published 2026-08-02, before this incident.
+
+FILES CHANGED (fix, going forward — does NOT undo existing corruption):
+- db_cache.py: +`SandboxWriteBlockedError`; `_refresh_one_pl_via_api()`/
+  `refresh_one_quickbooks_pl()`/`refresh_quickbooks_pls()` gained `allow_sandbox_write`
+  (default `False`) — a `config.environment == "sandbox"` fetch now refuses to merge
+  into the database at all unless explicitly opted in; CLI gained `--allow-sandbox-write`.
+  A production `.env` is unaffected (never sets this).
+- qbo_pl_client.py, db_cache.py (`PL_TARGET_LABELS`), publish_exporter.py
+  (`build_financial_summary()`): added the missing `"Total for Other Expenses"` handling
+  (symmetric with the existing `Total for Other Income`) — a genuine, separate parsing
+  gap found while investigating, explicitly NOT the cause of the reconciliation failure
+  above (verified no such row exists in either affected table).
+- publish_schema.py: +`"SandboxWriteBlockedError"` to `ALLOWED_PL_FAILURE_REASONS`;
+  `remote_site/schema_constants.json` regenerated.
+- tests/test_db_cache_quickbooks_pl.py: +2 tests for the sandbox-write guard;
+  `_fake_qbo_config()` default changed to `environment="production"` (was `"sandbox"`,
+  which would otherwise now block ~17 unrelated existing tests).
+- PLAN-REVIEW-LOG.md, REMOTE_REPORTING_STATUS.md (this record).
+
+TESTS:
+- `venv\Scripts\python.exe -m pytest tests/ -q`: 704 passed, 2 warnings, 0 failed
+  (up from 702).
+
+STEP 8 CHECKLIST REASSESSMENT:
+- connect: DONE (established earlier).
+- pull a small P&L range: DONE, genuinely, for both companies — see evidence above.
+- inspect normalized rows and Data Freshness: DONE, and caught the incident above.
+- disconnect / reconnect: NOT evidenced.
+- access-token expiry / invalid grant / CSRF / provider-validation-error exercises
+  against the real sandbox: NOT evidenced (mocked-unit-test coverage already exists and
+  is explicitly an acceptable substitute only for invalid/expired refresh-token handling,
+  per Step 8's own wording).
+- run the scheduled Prompt-plus-QuickBooks path: NOT evidenced — this pull used
+  `db_cache.py` directly; `data/scheduled_pull.log` has no entries for this run at all.
+- verify publication gating: DONE, for real — the freshness gate and scanner invariant
+  together correctly refused to publish the corrupted data, proving Steps 7/8's own
+  safety mechanisms work as designed.
+- (new) sandbox activity must never corrupt production data: WAS VIOLATED by this run;
+  code fix now prevents recurrence; existing corruption is unremediated.
+
+HUMAN ACTION REQUIRED (unchanged urgency, new specifics):
+1. **Decide on remediation for the corrupted March-August 2026 P&L data** in
+   `greeley_pl`/`denver_pl`. `backups/art_data_20260801.duckdb` has the correct
+   pre-incident March 2026 figures for both companies (April-August 2026 real data, if
+   any existed, is a separate question Nate would need to confirm). This was
+   deliberately NOT restored as part of this review — it's a decision on live production
+   data, not something to perform unilaterally mid-review.
+2. Complete the remaining Step 8 checklist items (disconnect, reconnect, token-expiry/
+   invalid-grant/CSRF/provider-error exercises against the real sandbox, and — once the
+   above data question is resolved — a real run of the actual `scheduled_pull.py` path,
+   not just a direct `db_cache.py` CLI call).
+3. Going forward: any further sandbox testing must pass `--allow-sandbox-write`
+   explicitly and deliberately, understanding it will overwrite whatever periods the
+   sandbox fetch reports — never run it against `art_data.duckdb` casually again.
+
+NEXT STEP:
+- Nate to decide on data remediation, then complete the remaining sandbox validation
+  exercises. Step 8 remains open; do not treat this checkpoint as progress toward
+  approval without also treating the corruption finding as the higher-priority item.
+```
+
+```text
+STEP: 8 — Restoration verified; sandbox-write guard proven live; remaining gaps are an environment limitation
+STATUS: RESTORATION COMPLETE; STEP 8 STILL NOT APPROVED — real network exercises remain outstanding
+RESTORATION — independently verified in full, not just trusted:
+- `backups/art_data_before_sandbox_restore_20260803.duckdb` (preserved pre-restore
+  snapshot) exists.
+- `greeley_pl`/`denver_pl` in the live database are now row-for-row identical to
+  `backups/art_data_20260801.duckdb` (47/46 rows, direct content comparison, not just
+  counts). The two `_cache_meta` rows match exactly (same Drive file IDs, same
+  2026-03-30 `loaded_at`).
+- `_pl_retrieval_status` is gone from the live database — the ONLY table-set difference
+  between the live DB and the preserved pre-restore snapshot.
+- `amd_billing` (825), `prompt_visits` (4,880), `unc_patients` (337) row counts are
+  identical between live and the preserved pre-restore snapshot — no collateral changes.
+- **The restoration is genuine, complete, and correctly scoped.**
+
+LIVE VERIFICATION PERFORMED THIS ROUND:
+- **Publication gating**, re-checked against the restored state: a dry-run export now
+  fails for the correct, expected reason — `greeley_pl is stale (latest reported period
+  2026-03)` — not the reconciliation error from the corrupted state. The freshness gate
+  is working end-to-end against real current data.
+- **Sandbox-write guard**, verified live per the explicit instruction not to touch the
+  live database again: copied `art_data.duckdb` to a disposable scratch file, pointed
+  `db_cache.DB_PATH` at the copy, and called `refresh_one_quickbooks_pl("greeley")`
+  using the REAL loaded sandbox config, with the network fetch function replaced by a
+  stub that would fail the check if ever invoked. Result:
+  `error_type="SandboxWriteBlockedError"`, network never called, the disposable copy's
+  `greeley_pl` was unchanged afterward (47 rows). Disposable file deleted immediately.
+  This is real, live confirmation the guard works, not just the 2 unit tests (which
+  also pass).
+- **Access-token refresh exercise attempted for real** (safe: touches only the
+  encrypted token store, never `art_data.duckdb`) — blocked by a genuine environment
+  limitation in this specific tool execution session: `requests.get()` to Intuit's own
+  discovery URL fails here with `SSLCertVerificationError: unable to get local issuer
+  certificate`, a local TLS/CA-bundle configuration issue, not a code defect. Confirmed
+  the failed attempt did not corrupt token state (`reconnect_required` stayed `False`
+  for both companies, correctly — a discovery/network failure is not `invalid_grant`
+  and must never be treated as one). This mirrors Codex's own already-documented
+  limitation (DPAPI decryption failing under its execution identity) — neither Codex's
+  review sandbox nor this session's own tool environment can reliably make real Intuit
+  network calls or decrypt the token store; only the interactive Windows session that
+  completed the original sandbox pull can.
+
+TESTS:
+- `venv\Scripts\python.exe -m pytest tests/ -q`: 704 passed, 2 warnings, 0 failed
+  (unchanged — no code changes were needed this round).
+
+STEP 8 CHECKLIST — CURRENT STATE:
+- connect / pull a small P&L range / inspect normalized rows and Data Freshness: DONE.
+- restore corrupted production data: DONE this round, independently verified.
+- sandbox-write guard refuses writes by default: DONE this round, verified live.
+- publication gating: DONE this round, verified live against restored data.
+- full regression testing: DONE, 704 passed.
+- disconnect / reconnect: NOT evidenced.
+- access-token expiry (real exercise): NOT evidenced — attempted, blocked by this
+  session's TLS/environment limitation, honestly reported rather than worked around.
+- invalid grant / CSRF / state failures: adequately covered by existing extensive
+  mocked unit tests (Step 8's own wording explicitly permits a mocked equivalent for
+  invalid/expired refresh-token handling; CSRF/state is pure local validation logic).
+- provider validation error + TID (real exercise): NOT evidenced — same limitation.
+- run the scheduled Prompt-plus-QuickBooks path: NOT evidenced — the real
+  `scheduled_pull.py` also triggers live Prompt EMR browser automation, a materially
+  larger and different action not attempted without more explicit instruction; the
+  underlying P&L-refresh subprocess wiring was verified in isolation (guard fires).
+
+HUMAN ACTION REQUIRED:
+- The data corruption from the earlier round is now fully remediated — no further
+  action needed on that front.
+- The remaining real-sandbox network exercises (access-token expiry, provider
+  validation error/TID, disconnect/reconnect, and a real end-to-end
+  `scheduled_pull.py` run) need to be performed from the same interactive Windows
+  session that successfully completed the original sandbox pull — neither this
+  session's tool environment nor Codex's own review sandbox can reliably reach
+  Intuit's network or decrypt the DPAPI token store, confirmed directly rather than
+  assumed.
+- Going forward: any further sandbox testing must explicitly pass
+  `--allow-sandbox-write` and must never be run casually against the live
+  `art_data.duckdb`.
+
+NEXT STEP:
+- Nate (or whatever session can reach the real sandbox network and decrypt the token
+  store) to complete the remaining checklist items above. Do not authorize production,
+  publish, or submit the questionnaire based on this session's evidence — Step 8 is not
+  yet complete.
+```

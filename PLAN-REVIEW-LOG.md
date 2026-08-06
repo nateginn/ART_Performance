@@ -1577,3 +1577,3074 @@ VERDICT: APPROVED
 feature is not yet operationally complete: the owner must reauthorize Google Drive once, ensure the
 source P&L files contain the required current month, and observe one successful scheduled run before
 the status can claim end-to-end success.
+
+---
+
+# Plan Review Log: Direct QuickBooks Online API Integration (PLAN-QUICKBOOKS-DIRECT-API-AND-COMPLIANCE.md)
+Started 2026-08-01. MAX_ROUNDS=3 for Step 1 (baseline/mapping only, no code). Codex model: gpt-5.6-luna (CLI default).
+New Codex thread for this plan (separate from the remote-reporting thread above).
+
+## Step 1 — Establish baseline and map current code
+
+`PLAN.md` overwritten with the Step 1 plan (a verified interface map, no code changes).
+Baseline test run before any change: `venv\Scripts\python.exe -m pytest tests/ -q` -> **279 passed**,
+2 third-party deprecation warnings (pytz/dateutil `utcfromtimestamp`) — matches the plan's stated
+`279 passed` baseline exactly.
+
+## Round 1 — Codex (Step 1)
+
+Six points raised, all verified real:
+
+1. `.issubset()` vs exact key match in `scheduled_pull.py`'s validation (extra fields would pass
+   unvalidated), and `_pl_refresh_ok()`'s outer `except` still logs raw `{exc}` text
+   (`scheduled_pull.py:179`) despite the sanitized-logging framing elsewhere in the same file.
+2. The label column is NOT arbitrary as originally claimed — `ask.py:105` and `pivot_report.py:6`
+   both hardcode `"Profit and Loss - Monthly"` as the literal column name and would raise
+   `KeyError` against anything else. Also confirmed the header row must be actual SQL `NULL`
+   (`db_cache._pl_periods_found()` checks `row[0] is not None`), and a trailing `Total` column is
+   harmless (both consumers skip non-month-matching columns).
+3. "Orphaned" was too strong for `quickbooks_pl_loader.py`/`qb_pl_reconciliation.py` — confirmed
+   `main.py:362` exposes `QBPLReconciliation` via CLI and `qb_pl_reconciliation.py:12` imports
+   `QuickBooksPLLoader` directly. Reachable manual path, not part of the live scheduled pipeline,
+   but not dead code either.
+4. Most material finding: `scheduled_pull.py::run_pull()` returns at line 340/349 (Prompt failure)
+   BEFORE line 353's `_pl_refresh_ok()` is ever reached — confirmed by direct read. This
+   contradicts `PLAN-QUICKBOOKS-DIRECT-API-AND-COMPLIANCE.md` Phase 4 item 3 and the execution
+   plan's Step 6 requirement verbatim ("QuickBooks is attempted after Prompt failure"). This is a
+   required Step 6 behavioral change, not an intentional pre-existing asymmetry as the first draft
+   implied.
+5. `requests`/`cryptography` confirmed importable but NOT declared in `requirements.txt` (arrived
+   transitively) — Step 2 must add both explicitly. Python 3.12.9 (venv) vs CLAUDE.md's "3.13
+   global" noted as informational only.
+6. Four omitted interfaces/constraints added: `_cache_meta`'s Drive-shaped columns and what a QBO
+   adapter must still write (`loaded_at`, via the existing `_save_meta()` helper); no overlap
+   protection on P&L refresh itself (only within-process, via `refresh_pl()`'s transaction);
+   `data_inventory.py --check` deliberately excludes P&L tables from its own separate gate; and
+   CLAUDE.md's "no Google Drive dependency for normal operation" restated as this plan's own
+   rationale, not a contradiction.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All six points verified directly against source before accepting (none disputed):
+
+1. Confirmed `_EXPECTED_PL_RESULT_KEYS.issubset(r.keys())` at scheduled_pull.py and the raw
+   `{exc}` interpolation at line 179. Documented both as known, pre-existing gaps — the issubset
+   looseness as a design note (extra fields tolerated by design, not a defect), the raw-exception
+   logging explicitly flagged as a Step 5 fix target rather than fixed now (Step 1 makes no code
+   changes).
+2. Confirmed via grep: `ask.py:105` and `pivot_report.py:6` both hardcode the exact label-column
+   string. Rewrote the raw-shape section to state the label column must be named exactly
+   `"Profit and Loss - Monthly"`, the header row must be real SQL NULL, and category rows must use
+   exact label strings — corrected from the original "arbitrary label column" claim, which was
+   wrong for two real consumers.
+3. Confirmed via grep: `main.py:362` (`QBPLReconciliation`) and `qb_pl_reconciliation.py:12`
+   (`from quickbooks_pl_loader import QuickBooksPLLoader`). Reclassified from "orphaned" to
+   "reachable via main.py's CLI, not part of the live scheduled pipeline" — same practical
+   conclusion (new adapter must not build on it) but accurate framing.
+4. Confirmed via direct read of scheduled_pull.py lines 322-363: `return 1` at both failure exits
+   precedes the P&L gate. Added as a named, required Step 6 behavioral change (restructure
+   run_pull() so the P&L attempt always happens after a Prompt attempt regardless of outcome,
+   while keeping publication gated on both) rather than leaving it framed as settled, intentional
+   asymmetry.
+5. Confirmed via direct venv import test. Added both packages to the Step 2 action items in
+   PLAN.md; noted the Python version discrepancy as informational.
+6. All four confirmed against source (db_cache._save_meta()/build_freshness(), refresh_pl()'s
+   transaction scope, data_inventory.py's CHECK_REQUIRED_TABLES set, CLAUDE.md's architecture
+   section) and added to the plan as a new "additional interfaces identified" subsection.
+
+Rejected nothing this round — every point was concrete and verifiable, and all six materially
+improved the accuracy of the map. Re-ran `pytest tests/ -q` after editing PLAN.md (a docs-only
+change, no source touched): still 279 passed, unchanged.
+
+## Round 2 — Codex (Step 1)
+
+Six points raised, all verified real (three were re-corrections of things Round 1's fix had
+already touched but left imprecise):
+
+1. `quickbooks_pl_loader.py`'s bug list was stale — current source already uses case-insensitive
+   matching and already includes Manning Herington/Movedocs/SELF PAY; those are historical
+   CLAUDE.md notes describing a bug fixed 2026-07-09, not current bugs.
+2. `qb_pl_reconciliation.py` is not "reachable only via main.py's CLI" — it has its own
+   `if __name__ == '__main__': main()` entrypoint too.
+3. The contract-validation correction from Round 1 was itself still overstated — only 4 of the
+   10 result fields (found/downloaded/acceptable as bool, verdict as enum, plus a cross-field
+   re-derivation check) are actually validated; the rest are presence-only via issubset.
+4. `pivot_report.py` has the same March-2026 hardcoded month-list cutoff as ask.py; the plan had
+   only named ask.py.
+5. Explicit Phase 4 interfaces (run ID, per-source success/stale/failed/not-configured status,
+   request ranges, accounting method, Intuit TID, content-hash idempotency) are still not mapped
+   as named missing/future interfaces.
+6. `_cache_meta` is more than passive bookkeeping — `_cached_time()` and `status()` actively
+   interpret `drive_modified_time` for change-detection/display; writing non-Drive values there
+   needs explicit design + a regression test, not just a note.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All six verified against source before accepting; none disputed:
+
+1. Confirmed via direct read of quickbooks_pl_loader.py: case-insensitive matching
+   (`_patient_revenue_categories_upper`) and all four previously-missing categories are present.
+   Cross-checked CLAUDE.md's own "Open items" note confirming the 2026-07-09 fix date. Rewrote the
+   PLAN.md section to state no known bugs remain in this module, with the correction history kept
+   visible (both what Round 1 and Round 2 each caught) rather than silently overwritten.
+2. Confirmed via direct read: qb_pl_reconciliation.py:472 has its own `main()`/`__main__` guard.
+   Corrected to "two independent manual invocation paths."
+3. Confirmed via direct read of scheduled_pull.py's validation block: exactly 4 fields
+   (found/downloaded/acceptable/verdict) are value-checked; table/row_count/modified_time/
+   source_period/error_message are presence-only. Rewrote to state this precisely instead of the
+   vaguer "only the listed fields are validated" phrasing Round 1's fix left in place.
+4. Confirmed via direct read: pivot_report.py:8-11's MONTH_ORDER list ends "March 2026" exactly
+   like ask.py's. Added pivot_report.py alongside ask.py in the out-of-scope note.
+5. Accepted — added a new explicit paragraph naming run ID, the success/stale/failed/
+   not-configured status enum (noting today's verdict enum has no "not configured" state), request
+   ranges, accounting method, Intuit TID, and idempotency markers as wholly new surface area for
+   Steps 2/4/5/7, not modifications to existing partial support.
+6. Confirmed via direct read: `_cached_time()` is called by `_refresh_one_pl()` to compute
+   `was_current`, and `status()` prints `drive_modified_time` directly. Upgraded the note from an
+   implicit "Step 2/4 should decide" to an explicit requirement: decide the substitute values AND
+   add a regression test exercising both functions against whatever the adapter writes.
+
+Rejected nothing this round either. Re-ran `pytest tests/ -q` after this docs-only edit: still 279
+passed, unchanged.
+
+## Round 3 — Codex (Step 1, MAX_ROUNDS reached)
+
+Four points raised, all verified real:
+
+1. "No known bugs remain" in `quickbooks_pl_loader.py` overstated — `CLAUDE.md` still records
+   `ART Greeley transfer` needing an explicit exclusion, and `NON_PATIENT_CATEGORIES`
+   (`quickbooks_pl_loader.py:50`) does not contain it. Should be called an unresolved legacy
+   concern, not a closed bug list.
+2. The result-shape section called itself an "exact hard contract" while the same section
+   documents that extra fields pass validation via `issubset()` — contradictory; should say
+   "required-minimum shape."
+3. The stated baseline-recording deliverable was phrased as an instruction ("Run pytest... and
+   record") rather than an actual recorded result in PLAN.md itself.
+4. The Risks section still said the two legacy modules were "confirmed orphaned," contradicting
+   the corrected body text from Rounds 1-2.
+
+VERDICT: REVISE
+
+### Resolution — MAX_ROUNDS=3 reached, self-verified and closed by Claude
+
+Per this skill's hard rule, the loop terminates at MAX_ROUNDS — no further Codex calls for Step 1.
+As final arbiter, verified all four points directly against source (matching this project's own
+established precedent for closing out a capped review — see Phase 0's Round 5 resolution above):
+
+1. Confirmed via direct read: `NON_PATIENT_CATEGORIES = ['SUBLEASE', 'Uncategorized Income',
+   'Interest', 'Other Income']` — no `'ART Greeley transfer'` entry. Corrected both the body
+   text and the Risks section to state this as a standing, unresolved legacy item, distinct from
+   the genuinely-fixed Medport/missing-category bugs.
+2. Confirmed the contradiction by re-reading the section. Changed "exact result shape is a hard
+   contract" to "required-minimum result shape, not an exact one," consistent with the
+   already-correct issubset()/4-fields-validated explanation elsewhere in the same document.
+3. Confirmed PLAN.md's Approach item 3 read as an instruction. Replaced with the actual recorded
+   outcome: `279 passed, 2 warnings` (third-party deprecation warnings only), an exact match to
+   the authoritative plan's stated baseline.
+4. Confirmed "confirmed orphaned" still appeared in the Risks section despite the body being
+   corrected in Rounds 1-2. Rewrote it to state the reachable-manual-path conclusion and recorded
+   that dashboard.py/ask.py were independently checked and do not import either module.
+
+Rejected nothing across any of the 3 rounds this step — every Codex finding was verified true
+and fixed. Re-ran `pytest tests/ -q` after these final doc edits: still 279 passed, unchanged
+(docs-only changes, no source touched).
+
+**Step 1: CONVERGED via self-verified closure at MAX_ROUNDS.** The map is now accurate against
+current source on every point raised across 3 rounds. Step 2 (configuration and secure token
+storage) is unblocked.
+
+---
+
+## Step 2 — Define configuration and secure token storage
+
+`PLAN.md` overwritten with the Step 2 plan. New Codex thread for this step (each step gets
+its own thread per this plan's convention; the Step 1 thread stayed focused on the mapping
+review). MAX_ROUNDS=4 (real code + secrets handling, higher stakes than Step 1's mapping-only
+review).
+
+Code written before review: `qbo_config.py` (new), `qbo_token_store.py` (new, DPAPI via
+ctypes), `tests/test_qbo_config.py` (new, 17 tests), `tests/test_qbo_token_store.py` (new, 18
+tests, real DPAPI round trips against tmp_path files). `requirements.txt` (+`requests==2.32.5`),
+`.gitignore` (+`data/qbo_tokens.enc`/`.tmp`), local `.env` (+7 empty QBO_* placeholder keys,
+values never read/printed). `pytest tests/ -q` → **314 passed** (279 baseline + 35 new), no
+regressions.
+
+## Round 1 — Codex (Step 2)
+
+DPAPI wrapper assessed sound (struct layout, argument order, buffer lifetime via ctypes'
+`_objects`, LocalFree on both success/exception paths all verified correct against the Win32
+API). Six material findings on the storage layer:
+
+1. Lost-update race in `save()`/`disconnect()`/`mark_reconnect_required()` — no cross-process
+   lock guards the read-modify-write cycle.
+2. `_load_all()` chains raw exceptions via `raise ... from exc`; a traceback logger could
+   surface unsanitized detail even though the `TokenStoreError` message itself is clean.
+3. `mark_reconnect_required()` accepts and persists arbitrary `reason` text, contrary to the
+   "fixed short code, never raw provider message" rule.
+4. `_write_all()`'s atomicity is conditional on `os.replace()` succeeding; no cleanup on
+   failure, and a fixed temp path could collide under concurrent writers.
+5. Production redirect-URI validation only checked `startswith("https://")` — permits
+   `https://localhost`/`https://127.0.0.1` in production, and doesn't validate URL syntax at
+   all otherwise.
+6. `QBO_REPORT_TIMEOUT_SECONDS`/`QBO_MAX_RETRIES` have no upper bound.
+
+Also noted (informational, not blocking): no real secret/token/realm ID appears in any tracked
+file; OAuth flow itself is correctly out of scope for this step; could not independently run
+pytest (sandbox has no usable temp directory).
+
+VERDICT: REVISE
+
+### Claude's response
+
+All six verified as real before fixing (none disputed):
+
+1. Added `_token_store_lock` (OS-level `msvcrt.locking`, blocking `LK_LOCK`), directly modeled
+   on `publish_uploader.py`'s already-reviewed `_publish_lock` pattern but blocking rather than
+   fail-fast since this is a short critical section. `save()`/`disconnect()`/
+   `mark_reconnect_required()` now hold it across their entire read-modify-write.
+   `mark_reconnect_required()` was rewritten to do its read-modify-write directly inside the
+   lock rather than calling the public `get()`/`save()` (which would each try to acquire the
+   lock again and deadlock against itself). Verified with a real two-thread contention test
+   (not mocked) proving no lost update and no deadlock.
+2. Changed `from exc` to `from None`. Two new tests assert `__cause__ is None` for both the
+   DPAPI-failure and generic-exception paths.
+3. Added `RECONNECT_REASONS` (4 fixed codes); `mark_reconnect_required()` now raises
+   `ConfigError` for anything outside that set before any write, and `_load_all()` validates a
+   stored reason against the same set on read.
+4. Temp filename now includes PID + a random suffix; the write is wrapped in `try/finally` to
+   remove the temp file on any failure. A new test monkeypatches `os.replace` to fail and
+   confirms no `.tmp` file survives.
+5. Added `_validate_redirect_uri()` using `urllib.parse.urlparse` — rejects a closed loopback-
+   host set in production, requires a syntactically valid absolute http(s) URL with a real host
+   in both environments. Six new tests.
+6. Added `_MAX_REPORT_TIMEOUT_SECONDS=300`/`_MAX_RETRIES_CAP=10`, enforced in `_optional_int()`.
+   Four new tests.
+
+While fixing #3, also strengthened `_load_all()`'s shape validation with checks Round 1 didn't
+explicitly name but the same principle covers: mismatched `company_alias` field vs. dict key,
+invalid `environment`, empty-string required fields, non-boolean `reconnect_required`. Six more
+tests.
+
+Rejected nothing this round. `pytest tests/ -q` → **347 passed** (314 + 33 new), no regressions.
+
+## Round 2 — Codex (Step 2)
+
+Lock scope and `from None` fix confirmed correct. Five new material findings:
+
+1. The concurrency test was weak — both threads wrote the SAME company, so the original
+   unlocked implementation would also pass (either write wins, same as with the lock). Doesn't
+   actually prove lost-update prevention.
+2. `RECONNECT_REASONS` was enforced only in `mark_reconnect_required()` — `save()` serializes
+   any `CompanyTokens.reconnect_reason` directly, so constructing one with arbitrary text and
+   calling `save()` bypasses the allowlist entirely.
+3. `mark_reconnect_required()`'s rejection message echoed the raw rejected value
+   (`got {reason!r}`) — a caller-supplied reason could carry sensitive detail.
+4. `_load_all()`'s `issubset()` shape check tolerated extra fields, which then made
+   `CompanyTokens(**entry)` raise a raw `TypeError` instead of `TokenStoreError`. Also, an
+   unhashable stored `reconnect_reason` (e.g. a JSON list) would raise a raw `TypeError` from
+   the `in` membership test.
+5. `_validate_redirect_uri()` could raise a bare `ValueError` from `urlparse()` on a malformed
+   IPv6-literal host, bypassing `load_config()`'s promised `ConfigError` boundary. The loopback
+   set also missed the full 127.0.0.0/8 range, `*.localhost`, and IPv4-mapped IPv6 loopback.
+6. New file patterns (`data/qbo_tokens.enc.<pid>.<random>.tmp`, `data/qbo_tokens.enc.lock`)
+   were not covered by `.gitignore` — only the exact `.tmp` suffix from Round 1's fix was.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All findings verified real and fixed:
+
+1. Rewrote the test to target two DIFFERENT companies with a forced interleaving:
+   `store._load_all` is monkeypatched so thread A pauses (still holding the lock) after
+   reading but before writing; thread B's full `save()` attempt for a different company is
+   proven to still be blocked when A's pause ends (`assert not thread_b_done.is_set()`
+   inside A's own pause window) — direct proof of mutual exclusion, not just "both finished."
+2. Moved reason validation into `CompanyTokens.__post_init__` itself (via a shared
+   `_validate_reconnect_reason()` helper) — an invalid `CompanyTokens` can no longer be
+   constructed at all, so `save()` has nothing left to bypass.
+3. Changed the message to never echo the rejected value; a new test asserts a
+   secret-looking reason string never appears in the raised error's text.
+4. Changed `_load_all()`'s shape check from `issubset()` to exact `set(...) ==
+   _REQUIRED_FIELDS` match; added an `isinstance(reason, str)` guard before the membership
+   test; added a defense-in-depth `try/except (TypeError, ValueError)` around
+   `CompanyTokens(**entry)` in `get()` as well, in case the exact-match check is ever
+   weakened later.
+5. Wrapped `urlparse()` in `try/except ValueError` → `ConfigError`. Replaced the fixed
+   loopback set with `_is_loopback_or_unspecified_host()`, using `ipaddress` to check the
+   full loopback/unspecified range plus IPv4-mapped IPv6, and a `*.localhost`/trailing-dot
+   check for the reserved TLD.
+6. Changed `.gitignore` to `data/qbo_tokens.enc*` (covers the base file, `.lock`, and every
+   `.tmp` variant in one pattern).
+
+Added 15 new tests across both files. Rejected nothing this round. `pytest tests/ -q` →
+**359 passed** (347 + 12 net new, some replacing the weaker superseded test), no regressions.
+
+## Round 3 — Codex (Step 2)
+
+Confirmed the rewritten concurrency test is now meaningful (different companies, real forced
+interleaving, direct proof of mutual exclusion). Exception chaining, exact-key validation,
+unhashable-reason handling, redirect ValueError safety, and .gitignore are all confirmed fixed.
+Four new findings:
+
+1. `_validate_reconnect_reason()` still checked set membership before checking `isinstance` —
+   `CompanyTokens(..., reconnect_reason=[])` would raise a raw `TypeError` at direct
+   construction (the read path was fixed, the write/construction path wasn't).
+2. `CompanyTokens.__post_init__()` validated only `reconnect_reason` — a caller could construct
+   (and `save()`) an instance with an invalid `environment`, an empty required string, or a
+   non-bool `reconnect_required`, only caught on the next read, not at write time.
+3. `mark_reconnect_required()` still didn't validate `company_alias` before the lock — unlike
+   `get()`/`save()`/`disconnect()`, an unknown alias silently no-op'd instead of raising.
+4. Redirect-URI validation didn't validate the port (`.port` raises ValueError only when
+   accessed, never touched) and still allowed non-loopback plain-HTTP in sandbox, which Codex
+   read as conflicting with Phase 2's "HTTPS for any deployed callback" requirement.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All four verified real and fixed:
+
+1. Reordered `_validate_reconnect_reason()` to check `isinstance(reason, str)` before the `in`
+   test.
+2. Expanded `CompanyTokens.__post_init__()` to validate every field (alias, environment, all
+   five required strings non-empty, `reconnect_required` boolean type) in addition to the
+   existing reason check — mirrors `_load_all()`'s read-side checks so both directions enforce
+   the same invariants.
+3. Added the missing `company_alias` check to `mark_reconnect_required()`, matching the other
+   three functions' pattern, before validating `reason` or acquiring the lock.
+4. Rewrote `_validate_redirect_uri()`: explicitly accesses `.port` inside a try/except to catch
+   a malformed port string; added a new rule that plain-http is accepted only for a loopback
+   host in EITHER environment (Phase 2's "HTTPS for any deployed callback" read as two separate
+   rules: http-only-for-loopback, plus production forbidding loopback outright) — closing the
+   sandbox-non-loopback-http gap without changing the still-correct loopback-in-sandbox-allowed
+   behavior.
+
+One pre-existing test (`test_save_unknown_alias_raises_config_error`) needed updating since
+fix #2 moves its error from `save()`-time to construction-time — a strictly earlier failure,
+not a regression; updated the test to assert the error at construction. Added 13 new tests.
+Rejected nothing this round. `pytest tests/ -q` → **373 passed** (359 + 14 net new), no
+regressions.
+
+## Round 4 — Codex (Step 2, MAX_ROUNDS reached)
+
+Confirmed all four Round 3 fixes correctly implemented (full-field construction validation,
+mark_reconnect_required's alias check, port/non-loopback-HTTP redirect validation, .gitignore
+coverage). One remaining finding: the concurrency test's proof was incomplete — thread A only
+waited for `thread_a_holding_lock` (set by A itself) before asserting B hadn't completed; nothing
+proved B had actually REACHED its `save()` call in that window. An unlocked implementation could
+in principle still pass if B simply hadn't been scheduled yet by the OS. Suggested adding a
+`thread_b_started` event set immediately before B's `save()` call, with A waiting on it before
+asserting.
+
+VERDICT: REVISE
+
+### Resolution — MAX_ROUNDS=4 reached, self-verified and closed by Claude
+
+Per this skill's hard rule the loop terminates at MAX_ROUNDS — no further Codex calls for Step 2.
+As final arbiter, verified the finding directly (it's a mechanically checkable test-rigor gap,
+not a judgment call) and fixed it, matching this project's established precedent for closing a
+capped review (Phase 0, Step 1 above): added `thread_b_started`, set by thread B immediately
+before its `store.save()` call; thread A's paused `_load_all()` now waits on that event (failing
+the test outright if B never reaches its call within 5s) before proceeding to assert
+`thread_b_done` is still unset. This closes the exact gap named — A's mutual-exclusion assertion
+is now only evaluated once B has definitively attempted its save(), not merely once A has set its
+own "I'm holding the lock" flag.
+
+Rejected nothing across any of the 4 rounds this step — every Codex finding across all 4 rounds
+was verified real and fixed (DPAPI wrapper itself was assessed sound in Round 1 and never
+challenged again). `pytest tests/ -q` → **373 passed** (unchanged test count — the fix
+strengthened an existing test rather than adding a new one), no regressions.
+
+**Step 2: CONVERGED via self-verified closure at MAX_ROUNDS.** Configuration (`qbo_config.py`)
+and encrypted, cross-process-safe token storage (`qbo_token_store.py`) are in place, with
+94 tests covering config validation, DPAPI round trips, multi-company isolation, corruption/
+malformed-shape handling, write-time and read-time invariant enforcement, and a real forced-
+interleaving concurrency proof. Step 3 (OAuth flow using discovery-derived endpoints) is
+unblocked.
+
+---
+
+## Step 3 — Implement OAuth using discovery-derived endpoints
+
+`PLAN.md` overwritten with the Step 3 plan. New Codex thread for this step. MAX_ROUNDS=4
+(OAuth/CSRF/token-handling is exactly the high-stakes category this review protocol exists
+for).
+
+Code written before review: `qbo_oauth.py` (new — discovery fetch, state tracker,
+authorization URL, token exchange/refresh/revoke, local callback server, connect/disconnect/
+ensure_valid_access_token/refresh_token_age_days), `tests/test_qbo_oauth.py` (new, 44 tests,
+including a real local-HTTP-server end-to-end connect() flow, not mocked). A real bug was
+caught by running the tests (not just writing them): a cross-thread socket-close race in the
+callback server, surfaced as an unhandled thread exception on the first full-suite run — fixed
+by moving `server_close()` into the same thread that owns the socket. `pytest tests/ -q` →
+**417 passed** (373 baseline + 44 new), no regressions, verified clean of the race with
+`-W error::pytest.PytestUnhandledThreadExceptionWarning`.
+
+## Round 1 — Codex (Step 3)
+
+Twelve findings, all verified real — the most substantial single review round of the
+project so far:
+
+1. `connect()` opened the browser BEFORE binding the local callback server -- a fast
+   redirect could hit connection-refused and lose the callback permanently.
+2. The one-shot server had no per-connection read timeout (a slow/incomplete client could
+   hang the single `handle_request()` call) and no protection against a stray request to
+   the wrong path consuming that one call.
+3. Production is architecturally incompatible with the implementation: `qbo_config`
+   requires a real deployed HTTPS redirect in production, but `connect()` always tried to
+   bind a LOCAL socket to the configured host, which can't work for a real external domain.
+4. `_extract_error_code()` and the callback error-denial path embedded untrusted
+   provider/query text verbatim into exception messages -- a compromised/misbehaving
+   endpoint reflecting unexpected content back through an "error" field could leak it.
+5. `InvalidGrantError`'s docstring claimed it covered code exchange too, but the code
+   never actually raised it there -- a docstring/code mismatch.
+6. Concurrent callers to `ensure_valid_access_token()` could both read the same expiring
+   token, both refresh, and race to save -- Intuit documents concurrent refreshes can
+   invalidate each other's tokens; the Step 2 file lock didn't cover the network refresh
+   call itself.
+7. Negative `leeway_seconds` would let an already-expired access token be returned as valid.
+8. Malformed `expires_in` or a corrupted stored timestamp could raise a raw
+   `ValueError`/`TypeError` instead of a sanitized `OAuthError`.
+9. `disconnect()`'s `except OAuthError` didn't catch `qbo_config.ConfigError`, leaving the
+   local record intact on a broken `.env` -- contradicting its own "always removes the
+   local record" guarantee.
+10. No verification that the connected realm actually belongs to the requested company
+    alias -- connecting Denver while running `connect("greeley")` would silently associate
+    the wrong company.
+
+Also noted: OAuth Playground usage absent, cookie handling not applicable to this
+cookie-less CLI flow, `_StateTracker` itself assessed sound (CSPRNG, atomic consume,
+correct expiry). Could not independently run pytest (sandbox has no usable temp directory).
+
+VERDICT: REVISE
+
+### Claude's response
+
+All twelve verified against source/Intuit's documented behavior before fixing; none
+disputed:
+
+1. Split `_run_callback_server()` into `_start_callback_server()` (binds immediately) and
+   `_wait_for_callback()`; `connect()` now calls the former before `webbrowser.open()`.
+   New test makes the mocked `webbrowser.open()` itself probe the port from a background
+   thread, proving the server is already listening.
+2. Added `_CallbackHandler.timeout = 30` (bounds an accepted connection's read) and
+   rewrote the server loop as `_serve_until_callback()`, which keeps calling
+   `handle_request()` (shrinking the remaining-deadline timeout each iteration) until a
+   request matching the configured callback path arrives, answering non-matching paths
+   with 404 without consuming the real callback's slot. New test sends a stray
+   `/favicon.ico` request followed by the real callback.
+3. Added `qbo_config.is_loopback_or_unspecified_host()` (made public from Step 2's
+   private helper) and a manual-entry fallback (`_prompt_for_callback_params()`) for a
+   non-loopback redirect — the operator pastes the redirect URL after completing the
+   browser flow instead of this machine attempting an impossible local bind. New test with
+   a mocked `input()`.
+4. Added `_sanitize_error_code()` — only a fixed, known set of RFC 6749 error tokens pass
+   through verbatim; anything else becomes `"unrecognized_error"`. Two new tests confirm
+   an arbitrary value never leaks into a raised message.
+5. Fixed the docstring (not the code): an invalid_grant during code exchange is a failed
+   connect attempt with no existing company record to mark reconnect_required against, so
+   it correctly stays a plain OAuthError. New test proves this explicitly.
+6. Added `qbo_token_store.locked_company_tokens()` — a new context-manager primitive
+   extending the already-approved Step 2 module, holding the existing OS-level lock across
+   an entire read-decide-refresh-save sequence (including the network call) without a
+   second, deadlocking lock acquisition. New test proves exactly one real refresh call
+   happens under two-thread contention.
+7. Added an explicit `leeway_seconds < 0` rejection.
+8. Added `_parse_expires_in()`/`_parse_stored_timestamp()` shared helpers, used by
+   `connect()`, `ensure_valid_access_token()`, and `refresh_token_age_days()`.
+9. Broadened `disconnect()`'s except to `Exception` (justified in a comment: safe because
+   `revoke_token()` itself never raises, so this only ever catches config/discovery
+   failures).
+10. Added `_check_realm_not_used_by_another_company()` — a zero-extra-API-call guard
+    catching the case where a realm is already on record for the OTHER company alias.
+    Explicitly documented as a partial fix: full identity verification (calling
+    CompanyInfo to show the operator the real company name) needs Step 4's authenticated
+    API-calling infrastructure and is deferred there/to Step 8's sandbox validation, not
+    silently dropped.
+
+Also removed two pieces of dead code found while making these changes (`_CallbackResult`,
+`_now_iso()`) and made `is_loopback_or_unspecified_host()` public rather than duplicating
+loopback-detection logic in qbo_oauth.py.
+
+Rejected nothing this round. Added 13 tests to `tests/test_qbo_oauth.py` (44→57) and 10 to
+`tests/test_qbo_token_store.py` (52→62, covering `locked_company_tokens` specifically).
+`pytest tests/ -q` → **440 passed** (417 + 23 new), no regressions. Re-verified clean of
+thread-exception races with `-W error::pytest.PytestUnhandledThreadExceptionWarning`.
+
+## Round 2 — Codex (Step 3)
+
+Confirmed Round 1's ordering fix, per-connection timeout, wrong-path tolerance, error
+sanitization, negative-leeway/malformed-timestamp handling, and the normal refresh path's
+lock coverage. Seven new findings, the first a critical bug in Round 1's own fix:
+
+1. **Critical:** `locked_company_tokens.__enter__()` leaks the OS lock when `_load_all()`
+   raises -- no try/except wraps it, and Python's `with` protocol never calls `__exit__()`
+   for a context manager whose `__enter__()` itself raised. Especially serious since this
+   lock is now held across network calls. The Round 1 test claiming to verify release
+   didn't actually prove it.
+2. `is_loopback_or_unspecified_host()` treats 0.0.0.0/:: as "safe" -- backwards, since
+   unspecified means "all interfaces," letting a local callback server accept LAN
+   connections.
+3. HTTPS loopback redirects remain incompatible with the plain HTTP server -- sandbox
+   config permits `https://127.0.0.1:.../callback`, but a real browser's TLS handshake
+   against `_start_callback_server()`'s plaintext `HTTPServer` would fail.
+4. The manual production fallback trusts any pasted URL with a query string -- no
+   verification against the configured redirect URI's scheme/host/path.
+5. `disconnect()` can still resurrect a record during concurrent refresh -- unlocked
+   initial read, network revoke, then a separately-locked deletion leaves a window.
+6. The realm-reuse guard isn't atomic across two simultaneous connects, and shouldn't be
+   described as complete Denver/Greeley association protection.
+7. The overall authorization deadline can still be exceeded by up to the full 30s
+   per-connection timeout if a request arrives right at the deadline.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All seven verified real and fixed (the first confirmed as a genuine bug via a rigorous new
+test, not just theoretical):
+
+1. Wrapped `locked_company_tokens.__enter__()`'s body in `try/except BaseException`,
+   releasing the lock before re-raising. New test deliberately retains the raised
+   exception/traceback via an explicit reference (removing the GC side effect that let
+   Round 1's version pass by accident) and times the second acquisition, asserting it
+   completes in under 2s rather than msvcrt's ~10s internal retry window.
+2. Split into `is_loopback_host()` (loopback only) and `is_unspecified_host()`;
+   `_validate_redirect_uri()` now rejects an unspecified host outright, in any environment.
+3. `connect()`'s local-bind decision is now `scheme == "http" and is_loopback_host(host)`
+   -- HTTPS loopback falls back to manual entry like a non-loopback host does.
+4. `_prompt_for_callback_params()` now validates the pasted URL's scheme/host/port/path
+   against `config.redirect_uri` before accepting it.
+5. Added `locked_company_tokens.delete()`; rewrote `disconnect()` to run its entire
+   read-revoke-remove sequence under one lock acquisition, the same lock
+   `ensure_valid_access_token()` uses -- genuinely serializing the two operations.
+6. Rewrote the guard's docstring to explicitly name both limitations (first-time
+   wrong-company connection, cross-company TOCTOU race) rather than imply completeness.
+7. `_serve_until_callback()` now also shrinks `_CallbackHandler.timeout` to the remaining
+   deadline (capped at 30s) each loop iteration.
+
+Added 9 tests to test_qbo_oauth.py (57→60) and 4 to test_qbo_token_store.py (62→66).
+Rejected nothing this round. `pytest tests/ -q` -> **453 passed** (440 + 13 new), no
+regressions. One transient Playwright flake (`net::ERR_NO_BUFFER_SPACE`, unrelated
+test_remote_site.py) observed on one full-suite run -- confirmed environmental (passes
+23/23 in isolation; full suite re-ran clean 453/453 immediately after), not a real
+regression from this step's changes.
+
+## Round 3 — Codex (Step 3)
+
+Confirmed the lock-leak fix is now correct (the retained-traceback test actually exercises
+the release path) and that refresh/disconnect correctly serialize their read/network/write
+sequences. Two residual findings:
+
+1. `connect()` only acquires the store lock for its final `save()`, not the entire
+   multi-minute browser-authorization wait -- a disconnect() completing while a connect()
+   is still in flight for the same company can be "resurrected" by that connect()'s later
+   save(). The new disconnect test only covers refresh acquiring the lock first, not this
+   scenario.
+2. `_prompt_for_callback_params()` can still raise a raw `ValueError` from
+   `urlparse()`/`.port` for a malformed pasted URL, violating the module's sanitized
+   `CallbackError` contract.
+
+Also confirmed: unspecified-host rejection, HTTPS-loopback manual-entry fallback, pasted
+URL validation, reduced per-connection timeout, and realm-guard documentation are all
+correctly in place; the mutable class-level `_CallbackHandler.timeout` was noted as a minor,
+lower-risk residual item outside the stated single-operator/one-connect-at-a-time usage.
+
+VERDICT: REVISE
+
+### Claude's response
+
+Point 2 fixed directly: wrapped `_prompt_for_callback_params()`'s parsing in
+`try/except ValueError` → `CallbackError`. New test confirms a malformed pasted URL (bad
+port) raises the module's own exception type.
+
+Point 1 verified as real and NOT fixed with additional locking -- documented explicitly
+instead, as a deliberate design decision: closing it fully would mean holding the store
+lock across the full human-paced authorization wait (up to `AUTHORIZATION_TIMEOUT_SECONDS`,
+5 minutes), blocking every other operation for that company for however long a human takes
+to click through a browser consent screen -- a worse tradeoff than the race itself. The
+scenario requires an operator to explicitly disconnect a company while simultaneously
+running a NEW connect for the same company, a self-contradictory pair of actions this
+project's single-operator usage pattern makes very unlikely, and the resulting state (a
+real, successful, more-recent OAuth grant) is not corrupted data, just a surprising outcome
+for whoever issued the disconnect -- not a data-integrity bug. Added an explicit docstring
+section to `connect()` naming this precisely, matching the same disposition already applied
+to the realm-reuse guard's TOCTOU limitation in Round 2.
+
+Added 1 test. `pytest tests/ -q` → **454 passed** (453 + 1 new), no regressions.
+
+## Round 4 — Codex (Step 3, final)
+
+The lock-leak fix is confirmed correct (the retained-traceback test directly verifies
+cleanup, not garbage-collection timing). The pasted-URL fix is confirmed correct (parsing
+and `.port` access are both inside the `ValueError` guard). The documented connect/
+disconnect race disposition is accepted: under the stated single-operator model, avoiding a
+five-minute global lock is the correct tradeoff, and the outcome is a newer successful
+connection, not corrupted data. The realm-association TOCTOU limitation is likewise
+accurately documented and appropriately deferred. Callback binding, unspecified-host
+rejection, HTTPS-loopback fallback, refresh serialization, disconnect serialization, and all
+new tests align with their claimed fixes.
+
+VERDICT: APPROVED
+
+**Step 3: CONVERGED, APPROVED** after 4 rounds. Zero findings rejected across all 4 rounds
+-- every one verified against source and either fixed or explicitly, deliberately documented
+as an accepted residual limitation with reasoning Codex reviewed and accepted. This was the
+highest-stakes, most-revised step so far: 21 total findings across 4 rounds (12 in Round 1
+alone), including one critical bug in the project's own concurrency fix (the
+`locked_company_tokens` lock leak) caught only because Round 2 review reasoned about the
+`with`-statement protocol rather than trusting a passing test. Step 4 (QuickBooks P&L API
+adapter, using `qbo_oauth.ensure_valid_access_token()` for authentication) is unblocked.
+
+---
+
+## Step 4 — Implement the QuickBooks P&L API adapter
+
+`PLAN.md` overwritten with the Step 4 plan. New Codex thread for this step. MAX_ROUNDS=4.
+
+**Incident disclosed in full before the review, not minimized:** while writing tests for the
+new merge function, one test omitted the `db_path`/`monkeypatch` fixture every other test in
+`tests/test_db_cache_quickbooks_pl.py` uses, and it connected to and rewrote the REAL
+`art_data.duckdb`'s `greeley_pl` table (47 rows/9 cols -> 5 rows/8 cols), discarding all but
+4 target category rows. Caught immediately by comparing row counts against a same-day
+backup (`backups/art_data_20260801.duckdb`, predating the incident). Asked the owner for
+explicit permission before restoring (the first attempted fix was correctly blocked by the
+permission system as a production-data write); on approval, ran a targeted transactional
+restore of just `greeley_pl` + its one `_cache_meta` row. Verified: `greeley_pl` restored to
+47/9 matching the backup; `denver_pl` (46 rows) and `prompt_visits` (4,880 rows) confirmed
+unaffected throughout. Root cause (missing fixture) fixed in the test; a genuine, separate
+code bug the same incident surfaced (`merge_quickbooks_pl_periods()` missing an
+`_ensure_meta()` call before `_save_meta()`) was also fixed.
+
+Code written before review: `qbo_pl_client.py` (new), `qbo_config.py` (+API base URL
+constants/property), `db_cache.py` (+`merge_quickbooks_pl_periods()` and helpers),
+`tests/test_qbo_pl_client.py` (new, 32 tests), `tests/test_db_cache_quickbooks_pl.py` (+11
+tests). `pytest tests/ -q` → **497 passed** (454 baseline + 32 + 11), no regressions,
+re-verified clean after the incident's restore.
+
+## Round 1 — Codex (Step 4)
+
+Confirmed the incident disclosure is candid and substantially complete, the offending
+test's fix matches the established db_path/monkeypatch pattern, and no other test in either
+file appears able to reach the real database. Token handling assessed safe (Bearer header
+only, never in URLs or error messages). Eight material findings, the most important being
+that the incident's proximate cause (a missing fixture) was masking a deeper, real
+architectural bug:
+
+1. **The merge design itself is destructive**, independent of the test bug that exposed
+   it: `_read_existing_pl_wide_data()` filters to only PL_TARGET_LABELS, so ANY correct
+   call to merge_quickbooks_pl_periods() against a table with full Drive-CSV line-item
+   detail would discard every non-target row -- "this exactly explains the documented
+   47-row -> 5-row incident," not merely the test's own bug.
+2. parse_profit_and_loss() raises a raw AttributeError for non-dict input.
+3. Invalid calendar dates like "2025-99-01" are accepted as periods (shape-only string
+   validation, not real date validation).
+4. A required section with a Summary row present but all ColData cells blank returns
+   "success" with an empty category -- violates Phase 3's "never treat success without
+   usable data as fresh."
+5. NaN/Infinity are accepted as financial amounts.
+6. A duplicate group whose first Summary is empty suppresses a later valid occurrence.
+7. Phase 3's required metadata (retrieved_at, realm ID, requested range, content/
+   idempotency hash) is largely unpopulated.
+8. The new rollback test is invalid -- its failure wrapper rejects every CREATE TABLE
+   including _ensure_meta()'s, so it never reaches the DROP/CREATE sequence it claims to
+   test; the _ensure_meta() fix itself is correctly placed, but rollback is not actually
+   tested.
+
+Window splitting itself assessed correct and internally consistent (no boundary test
+failures found, though none existed yet either).
+
+VERDICT: REVISE
+
+### Claude's response
+
+All eight verified real and fixed; none disputed:
+
+1. Redesigned `_read_existing_pl_wide_data()` to return every existing category label, not
+   just PL_TARGET_LABELS; `merge_quickbooks_pl_periods()` now preserves all of them and
+   only updates the specific (label, period) values a new fetch reports. New test directly
+   reproduces the incident's shape (a table with "Services"/"Rent" line items) and confirms
+   they survive a merge -- this is the actual fix for the underlying bug, not just the
+   test.
+2. Added an explicit `isinstance(report_json, dict)` check raising PLApiError.
+3. Replaced string-slicing with `date.fromisoformat()` for real calendar validation.
+4. Each required group's extracted amounts must be non-empty or parse_profit_and_loss()
+   raises -- closes the "Summary present, ColData all blank" gap.
+5. Added `math.isfinite()` validation after parsing each amount.
+6. `_walk_rows()` now only "finds" a group once its Summary carries usable ColData (a new
+   `_has_usable_col_data()` helper), so an empty decoy no longer blocks a later valid
+   occurrence.
+7. Added `realm_id`/`source` to `PLPeriodData`, populated `retrieved_at` in both fetch
+   functions (previously a dead field), and added `realm_id`/`requested_start`/
+   `requested_end` parameters plus a SHA-256 `content_hash` to
+   `merge_quickbooks_pl_periods()`'s result.
+8. Replaced the blanket failure wrapper with `_FailOnCreateTableForTarget`, which only
+   fails the specific table's CREATE TABLE, letting `_ensure_meta()` and DROP TABLE both
+   succeed first -- the test now actually exercises what it claims to. The identical latent
+   gap in the pre-existing, already-approved `test_refresh_pl_rolls_back_if_create_table_
+   fails_after_drop` was found in the process and recorded in a code comment as an
+   out-of-scope item from prior work, not silently left undiscovered.
+
+Added 9 tests to test_qbo_pl_client.py (32->41) and 4 to test_db_cache_quickbooks_pl.py
+(37->41). Rejected nothing this round. `pytest tests/ -q` -> **510 passed** (497 + 13 new),
+no regressions. Production database re-verified intact (greeley_pl 47 rows, denver_pl 46
+rows, prompt_visits 4,880 rows) after these changes.
+
+## Round 2 — Codex (Step 4)
+
+Confirmed the Round 1 rollback-test fix now genuinely exercises DROP/CREATE rollback, and
+test isolation remains correct. Pushed further on whether the merge is genuinely non-
+destructive and found five more real gaps plus two metadata-timing issues:
+
+1. `_read_existing_pl_wide_data()` ignores the historical trailing "Total" column and
+   reconstructs only recognized monthly columns; the real database tables have that column.
+2. Rows with no parseable monthly values (labeled metadata/section rows, or rows whose
+   values exist only in Total) are still lost.
+3. `periods=[]` with an existing table still rebuilds the whole table instead of failing
+   before any write.
+4. Duplicate labels collapse into one dictionary entry (later overwrites earlier).
+5. `_has_usable_col_data()` treats `[label, {"value": None}]` as usable because it checks
+   only list length, not actual values -- a blank decoy can still suppress a later valid
+   occurrence.
+6. Malformed MetaData (e.g. an integer) can still produce a raw TypeError.
+7. The ColTitle fallback accepts invalid years such as "0000".
+8. `_cache_meta`'s fixed schema doesn't durably store requested range/content hash/
+   represented periods -- only source/realm/retrieval time. `fetch_and_parse_range()` also
+   stamps retrieved_at before fetching rather than after successful retrieval.
+
+VERDICT: REVISE
+
+### Claude's response
+
+Five of eight fixed directly (unhashable-shape/type-safety issues, the duplicate-label
+merge, the empty-fetch guard, and the retrieved_at timing); two (the Total column and
+label-only/Total-only rows) deliberately documented as a reasoned, narrower scope decision
+rather than engineered around; the durable-_cache_meta-schema point deferred to Step 7
+(Data Freshness reporting), where the schema decision about what's durably stored belongs:
+
+1. Fixed: `_period_from_metadata()` now checks `isinstance(metadata, list)` before
+   iterating, instead of relying on `or []`'s falsy-only substitution.
+2. Fixed: `_period_from_col_title()` rejects a year below 1900.
+3. Fixed: `_has_usable_col_data()` now checks that at least one cell beyond the label has
+   an actual non-None, non-empty value, not just that the list is long enough.
+4. Fixed: `_read_existing_pl_wide_data()` now unions duplicate-labeled rows' periods via
+   setdefault+update instead of a plain dict assignment that silently dropped the earlier
+   row's data.
+5. Fixed: `merge_quickbooks_pl_periods()` now raises `if not periods` before ever
+   connecting to the database, closing the "empty fetch silently rewrites an existing
+   table" gap. New test proves the existing table is completely untouched by a rejected
+   empty-fetch call.
+6. Fixed: `fetch_and_parse_range()`'s `retrieved_at` is now stamped after the fetch loop
+   completes, matching `fetch_and_parse_window()`'s per-window convention.
+7. The Total-column and label-only-row points verified real but deliberately NOT
+   engineered around: both are narrower than the Round 1 incident (no financial category
+   data is lost, only a purely derived/recomputable value and content-free decorative
+   rows), and every real category row in this practice's actual exports carries genuine
+   per-month values, not solely a Total-column figure. Recorded explicitly in the
+   function's own docstring as a reasoned scope decision, with an explicit flag to
+   revisit if a future export ever proves the assumption wrong -- not silently dropped.
+8. The `_cache_meta` durability point acknowledged as real but deferred: `merge_
+   quickbooks_pl_periods()`'s RETURNED result already carries every Phase 3 metadata
+   field (this session's own Step 4 requirement); deciding what additionally needs
+   PERSISTENT storage for Data Freshness reporting to surface is Step 7's actual scope,
+   not Step 4's.
+
+Added 7 tests to test_qbo_pl_client.py (41->48) and 2 to test_db_cache_quickbooks_pl.py
+(41->43). One existing test's expected error message needed updating (a legitimate shift
+caused by fix #3 firing earlier/more precisely than before, not a regression). Rejected
+nothing structurally -- points 7 and 8 were accepted as real findings with a reasoned,
+disclosed disposition rather than disputed as false. `pytest tests/ -q` -> **519 passed**
+(510 + 9 new), no regressions. Production database re-verified intact.
+
+## Round 3 — Codex (Step 4)
+
+Accepted both Round 2 documented-not-fixed dispositions: the historical Total amount is not
+consumed by current reporting code, and null-only rows are decorative while real financial
+rows with 0.00 remain parseable. Confirmed the rollback test and test isolation are correct.
+Four new material findings:
+
+1. `_has_usable_col_data()` still treats any nonblank cell after index 0 as usable -- a
+   value in an unrecognized/off-period column can still suppress a later valid duplicate
+   group, needing a fix based on recognized column_periods, not merely ColData position.
+2. The merge result still doesn't carry every metadata field -- retrieved_at and
+   Intuit-Tid are dropped even though PLPeriodData has them; the function doesn't even
+   accept Intuit-Tid as input.
+3. A nonempty periods list with empty category_totals still writes a header-only table
+   that can make freshness appear current; category amounts whose periods aren't in
+   `periods` are also silently dropped. The merge API should fail closed on both.
+4. An existing table with no recognizable month header is treated as empty and can still
+   be replaced, losing its rows -- a malformed existing table should abort the merge
+   rather than being silently reinitialized.
+
+Also noted: the six-month logic remains internally consistent; the old PLAN tradeoff text
+still described the superseded target-label-only design as current.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All four verified and fixed; the documentation staleness also fixed:
+
+1. `_has_usable_col_data()` and `_walk_rows()` now both take `column_periods` and check
+   specifically for a value at a RECOGNIZED period index, not any non-blank cell anywhere.
+   New tests cover the off-period-decoy scenario both at the unit level and through a full
+   parse_profit_and_loss() integration case.
+2. Added `intuit_tid` as a parameter; both `retrieved_at` and `intuit_tid` are now echoed
+   in the returned result. Persisting them durably in `_cache_meta` remains a separate
+   Step 7 design question, but the Step 4 result itself no longer silently drops metadata
+   it was handed.
+3. Added two new validations in `merge_quickbooks_pl_periods()`: every period in `periods`
+   must have at least one category value backing it (else raises, preventing a header-only
+   fresh-looking period), and every period appearing in `category_totals` must also appear
+   in `periods` (else raises, preventing silently-unreachable data).
+4. `_read_existing_pl_wide_data()` now raises ValueError -- aborting the merge before any
+   write -- when an existing table has rows but too few columns or no recognizable period
+   header, instead of treating it as empty and safe to replace. A genuinely empty (zero-row)
+   table is still correctly treated as safe to populate; new tests cover both cases plus
+   confirm the unparseable table's content survives untouched.
+
+Also fixed PLAN.md's stale "Key decisions" text, which still described the Round-1-
+superseded target-label-only design as current rather than as historical context.
+
+Added 9 tests across both test files (one existing test's expected message legitimately
+shifted earlier due to fix #1). Rejected nothing this round. `pytest tests/ -q` ->
+**527 passed** (519 + 8 net new), no regressions. Production database re-verified intact.
+
+## Round 4 — Codex (Step 4, MAX_ROUNDS reached)
+
+Confirmed all four Round 3 fixes are present and correctly tested, and re-accepted both
+documented scope decisions (Total column, decorative rows). One new finding: the "does this
+period have backing data" validation checked only that a period KEY was present in
+`category_totals[label]`, not that its VALUE was usable -- `{"Total for Income": {"2025-05":
+None}}` passed, writing a null-valued cell under a real period header that
+`pl_freshness_verdict()` would still report FRESH. NaN/Infinity/non-numeric values have the
+same gap. The merge boundary should validate finite numeric values itself, not rely solely
+on the parser.
+
+VERDICT: REVISE
+
+### Resolution — MAX_ROUNDS=4 reached, self-verified and closed by Claude
+
+Per this skill's hard rule the loop terminates at MAX_ROUNDS -- no further Codex calls for
+Step 4. As final arbiter, verified the finding directly (a mechanically checkable gap, not
+a judgment call) and fixed it: `merge_quickbooks_pl_periods()` now validates every value in
+`category_totals` is a real finite number (rejecting `None`, `NaN`, `Infinity`, `-Infinity`,
+non-numeric strings, and `bool` -- explicitly excluded despite `isinstance(True, int)` being
+`True` in Python) before any other validation runs, independent of whatever the caller
+(normally `qbo_pl_client`, which already enforces this at parse time) claims -- defense in
+depth at the merge boundary itself. Added a parametrized test covering all seven bad-value
+cases plus a positive test confirming real negative (loss month) and zero values are still
+accepted.
+
+Rejected nothing across any of the 4 rounds this step -- every Codex finding was verified
+real and either fixed or (twice) explicitly, reasonedly documented as an accepted scope
+decision that Codex itself later confirmed acceptable. `pytest tests/ -q` -> **535 passed**
+(527 + 8 new), no regressions. Production database re-verified intact (`greeley_pl` 47 rows,
+`denver_pl` 46 rows) for the final time this step.
+
+**Step 4: CONVERGED via self-verified closure at MAX_ROUNDS.** This was the project's most
+consequential step to date: a real data-loss incident occurred and was disclosed in full,
+recovered with the owner's explicit permission, and its actual architectural root cause (not
+just the proximate test bug) was found and fixed across 4 rounds of adversarial review --
+27 total findings, zero rejected. Step 5 (authentication, retry, and API error behavior) is
+unblocked.
+
+---
+
+## Step 5 — Implement authentication, retry, and API error behavior
+
+`PLAN.md` overwritten with the Step 5 plan. New Codex thread for this step. MAX_ROUNDS=4.
+
+Code written before review: `qbo_pl_client.py` (typed exception hierarchy replacing the
+flat `PLApiError`, `_sanitize_provider_error()`, `fetch_profit_and_loss_raw()` updated to
+classify by status code), `qbo_oauth.py` (+`force` parameter on
+`ensure_valid_access_token()`), `qbo_retry.py` (new — bounded retry/backoff/logging
+orchestration), `tests/test_qbo_retry.py` (new, 16 tests), `tests/test_qbo_oauth.py` (+1
+test for `force=True`). `pytest tests/ -q` → **552 passed** (535 baseline + 16 + 1), no
+regressions.
+
+## Round 1 — Codex (Step 5)
+
+Retry/backoff orchestration, exception typing, and sanitization assessed sound in overall
+shape (typed exception hierarchy classifies by status code correctly; one forced-refresh-
+and-retry on 401 is a reasonable policy; backoff exponential growth/cap verified). Six
+material findings:
+
+1. **Retry-count off-by-one / shared-counter bug** — `qbo_retry.py` used one shared
+   `attempt` counter for both the transient-retry budget and the auth-retry interruption
+   flag, so a sequence like `503, 503, 503, 401, 503` could permit MORE than
+   `config.max_retries` actual transient-failure attempts (the 401 "used up" a counter slot
+   without itself being a transient failure), and post-interruption backoff timing was
+   distorted by counting the interruption. Traced through the exact failure sequence to
+   demonstrate the bug, not just asserted it abstractly.
+2. **Unlogged forced-refresh failure** — when the forced refresh triggered by a 401 itself
+   raised `InvalidGrantError` (dead refresh token), it propagated with no log line at all,
+   unlike every other exit path in the retry loop.
+3. **No catch-all for unexpected exceptions** — `fetch_profit_and_loss_resilient()` only
+   caught `pl_client.PLApiError` subclasses; a bug inside `fetch_and_parse_range()` itself,
+   or a plain `requests` exception somehow escaping `qbo_pl_client.py`'s own handling,
+   would crash with no structured log entry.
+4. **`_sanitize_provider_error()` too permissive** — validated the item-level
+   `Fault.Error[0].code` field against a broad regex (`^[A-Za-z0-9_.-]{1,50}$`) that could
+   match arbitrary token-shaped strings, not just QuickBooks' small documented set of fault
+   codes — a materially weaker sanitization posture than `qbo_oauth._sanitize_error_code()`'s
+   existing fixed-allowlist approach for the OAuth token endpoint.
+5. **Raw provider-controlled values echoed into exception messages** — `_row_amounts()`'s
+   error messages for non-numeric/non-finite ProfitAndLoss amounts embedded the raw,
+   untrusted `raw` cell value directly in the raised message text.
+6. **`qbo_oauth.py`'s HTTP-calling functions (lines 116–283: `fetch_discovery`,
+   `exchange_code_for_tokens`, `refresh_access_token`, `revoke_token`) discard Intuit-Tid
+   entirely** and use a single scalar timeout rather than distinct connect/read bounds —
+   the same two gaps Step 4 had already fixed in `qbo_pl_client.py`, not yet carried over to
+   this module.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All six verified real against actual source before fixing; none disputed:
+
+1. Fixed in `qbo_retry.py` by introducing a dedicated `transient_attempts` counter,
+   incremented only on transient failures and checked independently via
+   `transient_attempts >= config.max_retries`; the original `attempt` variable was renamed
+   `overall_attempt` and kept only for cosmetic log-line numbering. Added a direct
+   regression test, `test_fetch_resilient_auth_interruption_does_not_consume_transient_retry_budget`,
+   reproducing the exact `503, 503, 503, 401, 503` sequence Codex named and asserting
+   exactly 3 calls occur (the transient budget exhausts at exactly `max_retries=3`,
+   unaffected by the 401 interruption, which is never even reached). Also updated
+   `test_fetch_resilient_exhausts_retries_and_raises` to match the corrected counting
+   semantics (3 total calls / 2 sleeps, not the old 4 calls / 3 sleeps).
+2. Fixed by adding `logger.error(...)` in `qbo_retry.py` before re-raising
+   `InvalidGrantError` from the forced-refresh path, with a dedicated
+   `outcome=forced_refresh_failed_invalid_grant` log field. Added
+   `test_fetch_resilient_logs_forced_refresh_invalid_grant_failure`.
+3. Fixed by adding a catch-all `except Exception:` (deliberately not `BaseException`, so
+   `KeyboardInterrupt`/`SystemExit` still propagate immediately) that logs
+   `outcome=unexpected_error` and re-raises unchanged. Added
+   `test_fetch_resilient_logs_and_reraises_unexpected_exception`, raising a plain
+   `RuntimeError` from the mocked fetch and asserting it is logged then re-raised.
+4. Fixed by redesigning `_sanitize_provider_error()` in `qbo_pl_client.py` to extract only
+   `Fault.type` (a small, Intuit-documented fixed enum: ValidationFault,
+   AuthenticationFault, AuthorizationFault, SystemFault, ServiceFault) against an explicit
+   `_KNOWN_FAULT_TYPES` allowlist, mirroring `qbo_oauth._sanitize_error_code()`'s existing
+   allowlist philosophy instead of pattern-matching a free-form code field.
+5. Fixed in `_row_amounts()`: the non-numeric case now reports only `type(raw).__name__`,
+   never the raw value; the non-finite case's message no longer embeds the value at all
+   (it can only ever be `nan`/`inf`/`-inf` once `float(raw)` has already succeeded, but the
+   policy is to never echo provider-controlled values regardless of how constrained the set
+   is).
+6. Fixed in `qbo_oauth.py`: added `_CONNECT_TIMEOUT_SECONDS = 10` (matching
+   `qbo_pl_client.py`'s constant/rationale) and a local `_sanitize_intuit_tid()` (kept as an
+   independent copy rather than a shared import, since OAuth/OIDC and the Reports API are
+   separate Intuit surfaces). `fetch_discovery`, `exchange_code_for_tokens`,
+   `refresh_access_token` now use a `(connect, read)` timeout tuple and attach a sanitized
+   `intuit_tid` to every `OAuthError`/`InvalidGrantError` they raise (added an `intuit_tid`
+   constructor parameter to `OAuthError` itself, inherited by `InvalidGrantError`).
+   `revoke_token()` is the one function that deliberately never raises (its bool return
+   leaves nowhere to attach an exception attribute), so its failure paths now `logger.warning(...)`
+   the sanitized Intuit-Tid instead of discarding it. Added 8 new regression tests in
+   `tests/test_qbo_oauth.py` covering Intuit-Tid capture on `fetch_discovery`,
+   `exchange_code_for_tokens`, and `refresh_access_token` failures; Intuit-Tid logging on
+   `revoke_token` failure; and the `(connect, read)` timeout tuple actually reaching
+   `requests` for all four functions. Also extended the test file's shared `_FakeResponse`
+   fixture with a `headers` parameter (mirroring `tests/test_qbo_pl_client.py`'s existing
+   pattern) since the prior fixture had no way to simulate response headers at all —
+   this was a pre-existing test-infrastructure gap, not a new regression, but it had to be
+   fixed for the new tests (and the changed production code, which now unconditionally
+   reads `resp.headers` on every response) to run at all.
+
+`pytest tests/ -q` → **563 passed** (552 baseline + 8 new in `tests/test_qbo_oauth.py`, plus
+the 3 new tests already counted in `tests/test_qbo_retry.py` under items 1–3 above), no
+regressions.
+
+## Round 2 — Codex (Step 5)
+
+Confirmed all six Round 1 fixes are present and the main transient-retry logic is now
+correct. Four further findings, all at the auth-boundary/malformed-response edges the
+Round 1 fixes didn't reach:
+
+1. **The catch-all still has two gaps**: the *initial* `ensure_valid_access_token()` call
+   at the top of `fetch_profit_and_loss_resilient()` sits entirely outside the
+   try/while loop, so any failure there (a plain `OAuthError`, or an `InvalidGrantError`
+   from a refresh token that was already dead before this run even started) escapes with
+   no log line at all. Separately, the forced-refresh's inner
+   `except qbo_oauth.InvalidGrantError:` clause only catches that one exception type — a
+   non-`InvalidGrantError` failure during the forced refresh (a plain `OAuthError` from a
+   network/response problem) is not caught by that clause and propagates out of the
+   surrounding `except pl_client.PLAuthError` handler entirely unlogged, since the
+   function's own catch-all only wraps the try body, not this nested except block.
+2. **The forced-refresh invalid-grant log line omits the exception's own `intuit_tid`** —
+   it logs only the original 401's TID, not the TID of the failed refresh response itself
+   (a distinct, and arguably more useful, correlation ID for the actual failure).
+3. **Malformed OAuth JSON with a valid-but-non-object value (e.g. the literal `null`)
+   crashes with a raw `TypeError`, not an `OAuthError`** — `fetch_discovery()`,
+   `exchange_code_for_tokens()`, and `refresh_access_token()` all do `k not in doc`/
+   `k not in payload` membership checks without first confirming the parsed JSON is a
+   dict; `None`/a list/a string bypass the `except ValueError` (JSON parsing itself
+   succeeded) and raise `TypeError: argument of type 'NoneType' is not iterable` instead.
+4. **The Round 1 mixed-sequence regression test doesn't actually test what its docstring
+   claims** — with `max_retries=3`, the transient budget exhausts on the 3rd `503`
+   response (index 2), so the loop raises `RetryExhaustedError` before ever reaching the
+   401 at index 3 or the 5th response — the test only re-validates plain early exhaustion,
+   not the auth-interruption interaction.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All four verified real against actual source before fixing; none disputed:
+
+1. Fixed in `qbo_retry.py`: wrapped the initial `ensure_valid_access_token()` call in its
+   own try/except, logging `outcome=initial_token_invalid_grant` (with the exception's
+   `intuit_tid`) for `InvalidGrantError` and `outcome=initial_token_fetch_failed` for
+   anything else, both re-raising unchanged. Added a second `except Exception:` clause to
+   the forced-refresh's inner try, logging `outcome=forced_refresh_failed_unexpected` for
+   any non-`InvalidGrantError` failure there before re-raising. Added
+   `test_fetch_resilient_initial_token_fetch_invalid_grant_is_logged`,
+   `test_fetch_resilient_initial_token_fetch_unexpected_error_is_logged`, and
+   `test_fetch_resilient_forced_refresh_unexpected_error_is_logged_and_reraised`.
+2. Fixed by binding the exception (`except qbo_oauth.InvalidGrantError as refresh_exc:`)
+   and including `refresh_exc.intuit_tid` in the log line, distinct from the original
+   401's TID already logged separately. Updated
+   `test_fetch_resilient_logs_forced_refresh_invalid_grant_failure` to raise the dead
+   refresh with its own `intuit_tid="tid-dead-refresh"` and assert it appears in the log.
+3. Fixed by adding an `isinstance(doc, dict)` / `isinstance(payload, dict)` check
+   immediately after each successful `resp.json()` parse, in all three functions
+   (`fetch_discovery`, `exchange_code_for_tokens`, `refresh_access_token`), raising a
+   sanitized `OAuthError` (carrying `intuit_tid`, reporting only `type(doc).__name__`,
+   never the value itself) before the membership check can run. Added one regression test
+   per function asserting a JSON `null` body raises `OAuthError` matching "unexpected
+   shape" rather than crashing.
+4. Fixed by changing the regression test's `max_retries` from 3 to 4 (via a locally
+   constructed `QBOConfig` instead of the shared `_config()` fixture), so the sequence
+   genuinely plays out in full: 3 transient failures (still under budget), the 401
+   interruption (one forced refresh, not counted against the budget), then a 4th
+   transient failure that exhausts the budget at exactly `max_retries=4`. Updated the
+   assertion from `len(call_log) == 3` to `len(call_log) == 5` and rewrote the docstring
+   to document the Round 2 correction.
+
+`pytest tests/ -q` → **569 passed** (563 baseline + 3 new in `tests/test_qbo_oauth.py` +
+3 new in `tests/test_qbo_retry.py`), no regressions.
+
+## Round 3 — Codex (Step 5)
+
+Confirmed all four Round 2 fixes are implemented correctly, including the now-fully-
+executed mixed retry sequence test. Two further findings:
+
+1. **The two new Round 2 catch-all log lines still omit `intuit_tid`** —
+   `initial_token_fetch_failed` and `forced_refresh_failed_unexpected` log the outcome but
+   not the exception's `intuit_tid`, even though a real discovery/refresh HTTP failure
+   (an `OAuthError` raised by `qbo_oauth.py`'s own HTTP-calling functions) carries one.
+   Only the invalid-grant variants of these same two paths currently include their TID.
+2. **Test coverage for Step 5's changes to `qbo_pl_client.py` is thin** — the file still
+   only exercised the flat `PLApiError`/generic-401 cases from Step 4; nothing tested the
+   new typed-exception classification by status code (`PLValidationError`/`PLAuthError`/
+   `PLRateLimitError`/`PLServerError`), the redesigned `_sanitize_provider_error()`'s
+   fault-type allowlist, `_sanitize_intuit_tid()`'s sanitization behavior, the blank-
+   `realm_id` guard, or the `(connect, read)` timeout tuple — all Round 1 additions with
+   zero direct test coverage.
+
+VERDICT: REVISE
+
+### Claude's response
+
+Both verified real against actual source before fixing; none disputed:
+
+1. Fixed in `qbo_retry.py`: bound the exception in both `except Exception:` clauses
+   (`as exc` for the initial-fetch path, `as refresh_exc` for the forced-refresh path) and
+   added `getattr(exc, "intuit_tid", None)` to both log lines — `getattr` rather than a
+   direct attribute access since a genuinely unexpected exception type (not an
+   `OAuthError`) has no such attribute at all. Updated
+   `test_fetch_resilient_forced_refresh_unexpected_error_is_logged_and_reraised` to raise
+   an `OAuthError` carrying `intuit_tid="tid-broken-refresh"` and assert it appears in the
+   log. Added a new test,
+   `test_fetch_resilient_initial_token_fetch_unexpected_error_includes_intuit_tid`,
+   covering the same for the initial-fetch path (the existing "not connected" test for
+   that path has no TID to assert on, since that failure never reaches an HTTP call at
+   all — kept as-is, a genuinely TID-less case).
+2. Added 17 new tests to `tests/test_qbo_pl_client.py`: a parametrized
+   `test_fetch_profit_and_loss_raw_classifies_status_code` covering all five typed
+   exceptions plus the unclassified-403-stays-plain-PLApiError case; a parametrized test
+   confirming all five documented `_KNOWN_FAULT_TYPES` pass through
+   `_sanitize_provider_error()` unchanged; two tests confirming an unrecognized fault type
+   and a non-Fault-shaped error body both sanitize to `None`; a test confirming
+   `_sanitize_intuit_tid()` strips control characters and caps length at
+   `_MAX_INTUIT_TID_LENGTH`; a test confirming a missing `Intuit-Tid` header yields `None`
+   rather than crashing; a test confirming a whitespace-only `realm_id` is rejected before
+   any request is made (constructible at all only because `CompanyTokens.__post_init__`
+   checks for a non-empty string, not a non-blank one -- the exact gap Round 1's realm_id
+   guard exists to close); and a test confirming the `(connect, read)` timeout tuple
+   actually reaches `requests.get`.
+
+`pytest tests/ -q` → **587 passed** (569 baseline + 1 new in `tests/test_qbo_retry.py` +
+17 new in `tests/test_qbo_pl_client.py`), no regressions.
+
+## Round 4 — Codex (Step 5, MAX_ROUNDS)
+
+Confirmed the Round 3 fixes are present and that retry accounting, sanitization, OAuth
+malformed-response handling, and P&L test coverage all now look sound. One further
+finding:
+
+1. **OAuth failure logs still lack structured HTTP status and sanitized error
+   classification** — the `initial_token_fetch_failed`/`forced_refresh_failed_unexpected`
+   log lines (and their invalid-grant siblings) carry only run ID, company, endpoint,
+   Intuit-Tid, and outcome. `qbo_oauth.OAuthError` stores only `intuit_tid` as a
+   structured attribute; HTTP status and the sanitized RFC 6749 error code remain
+   embedded only in the exception's message text, not logged as their own fields —
+   leaving token/discovery failure diagnostics short of what `_log_attempt()` already
+   provides for pl_client-originated failures (`http_status`/`provider_error`).
+
+VERDICT: REVISE
+
+This is Round 4, `MAX_ROUNDS` for this step. Per this project's established convention
+(Steps 1, 2, and 4 all converged the same way when a small number of concrete,
+mechanically-verifiable findings remained at the round cap): Claude verified this finding
+directly against source, confirmed it real, fixed it, and is documenting this as a
+**self-verified closure at MAX_ROUNDS** rather than spending an unavailable fifth round.
+
+### Claude's response (self-verified closure)
+
+Verified real: `OAuthError.__init__` indeed only accepted `intuit_tid`; every raise site
+in `qbo_oauth.py` embedded `resp.status_code` and the sanitized error code only in the
+f-string message, never as a separate attribute. Fixed:
+
+- Extended `OAuthError.__init__` to accept and store `http_status`/`error_code` in
+  addition to `intuit_tid` — `error_code` mirrors `PLApiError.provider_error`'s role for
+  this module (always pre-sanitized by the existing `_sanitize_error_code()` RFC 6749
+  allowlist before reaching here, so safe to log verbatim). `InvalidGrantError` inherits
+  the same constructor.
+- Updated every raise site in `fetch_discovery()`, `exchange_code_for_tokens()`, and
+  `refresh_access_token()` to pass `http_status` (and `error_code` where a token-endpoint
+  error body was parsed) — including extracting `http_status` from a `requests.HTTPError`
+  raised by `raise_for_status()` via `getattr(getattr(exc, "response", None),
+  "status_code", None)`, since a plain connection/timeout failure has no response to read
+  a status from at all (correctly `None` in that case).
+- Added `qbo_retry._log_oauth_failure()`, a dedicated structured-logging helper for
+  OAuth-originated failures (parallel to the existing `_log_attempt()` for pl_client-
+  originated ones), logging `attempt`/`http_status`/`error_code`/`intuit_tid`/`outcome`.
+  Replaced all four ad hoc `logger.error(...)` call sites
+  (`initial_token_invalid_grant`, `initial_token_fetch_failed`,
+  `forced_refresh_failed_invalid_grant`, `forced_refresh_failed_unexpected`) with calls to
+  this helper. The two initial-token-fetch call sites log `attempt=0` (no API call attempt
+  has happened yet at that point in the function); the two forced-refresh call sites log
+  `overall_attempt` (the current loop iteration, matching the 401 log entry logged just
+  above them).
+- Fixed a test-fixture bug this surfaced: `tests/test_qbo_oauth.py`'s shared
+  `_FakeResponse.raise_for_status()` raised a bare `requests.HTTPError` without setting
+  `.response` on it, unlike the real `requests.Response.raise_for_status()` (which always
+  sets `error.response = self`) — so `fetch_discovery()`'s new `http_status` extraction
+  couldn't be exercised by any test until the fixture matched real behavior.
+- Extended 3 existing tests (`test_fetch_discovery_http_error_captures_intuit_tid`,
+  `test_exchange_code_for_tokens_non_200_captures_intuit_tid`,
+  `test_refresh_access_token_invalid_grant_captures_intuit_tid`) with
+  `http_status`/`error_code` assertions, and extended all 4 of the Round 2/3
+  `qbo_retry.py` OAuth-failure-logging tests with assertions that `http_status=`/
+  `error_code=` (including the legitimate-`None` cases for a connection failure with no
+  response) appear correctly in the log text.
+
+`pytest tests/ -q` → **587 passed** (same count as Round 3 — no new test functions added,
+only additional assertions on existing ones, plus the one fixture correction), no
+regressions.
+
+**Step 5: CONVERGED via self-verified closure at MAX_ROUNDS.** Four rounds, 13 total
+findings (6 + 4 + 2 + 1), zero rejected. Step 6 (integrate QuickBooks into the daily
+scheduled run) is unblocked.
+
+---
+
+## Step 6 — Integrate QuickBooks into the daily scheduled run
+
+`PLAN.md` overwritten with the Step 6 plan. New Codex thread for this step. MAX_ROUNDS=4.
+
+Confirmed by reading source before writing any code: `scheduled_pull.py` already has a
+correct, reusable P&L refresh gate (`_pl_refresh_ok()`/`_run_pl_refresh_subprocess()`,
+built in an earlier unrelated session per `PLAN-QUICKBOOKS-DAILY-PULL.md`) — bounded
+subprocess, taskkill-on-timeout, strict JSON-shape validation, gates
+`publish_after_pull.run()` on both facilities being `acceptable`. This plumbing is
+reused unchanged; only what `db_cache.py --quickbooks-pl` does internally, and what
+triggers it, changes. Also confirmed a real, pre-existing bug matching the compliance
+plan's own Step 1 mapping: `run_pull()` only reached `_pl_refresh_ok()` after a
+*successful* Prompt pull — every Prompt-failure early return skipped the P&L attempt
+entirely, contradicting Step 6's explicit requirement #3 ("attempt both QuickBooks P&Ls
+in the same run, even when Prompt fails"). Also confirmed `db_cache.pl_freshness_verdict()`/
+`expected_pl_period()`/`_pl_periods_found()` require zero changes — they're content-based
+against the wide-table shape, and `merge_quickbooks_pl_periods()` (Step 4) already writes
+that exact shape.
+
+Code written before review:
+- `db_cache.py`: renamed the legacy Google-Drive-CSV path `refresh_quickbooks_pls()` →
+  `refresh_quickbooks_pls_from_drive()` (pure rename, kept as a manual/backup path, not
+  deleted); added `_daily_pl_window()` (a <=6-month trailing window always covering the
+  last closed month, matching the compliance plan's "expected normal daily behavior is
+  two QuickBooks report calls"); added `_refresh_one_pl_via_api()` (per-facility direct-
+  API refresh feeding `qbo_retry.fetch_profit_and_loss_resilient()`'s result into the
+  existing `merge_quickbooks_pl_periods()`/`pl_freshness_verdict()`, returning the
+  identical result-dict shape `scheduled_pull.py` already validates); added new
+  `refresh_quickbooks_pls(run_id=None)` — the new production entrypoint, attempting
+  Greeley/Denver independently; CLI `--quickbooks-pl` now calls the new function, `+
+  --run-id` argument added.
+- `scheduled_pull.py`: generates a `run_id` (`uuid.uuid4().hex[:12]`) at the top of
+  `run_pull()`; restructured so `_pl_refresh_ok(run_id=run_id)` always runs after the
+  Prompt attempt (success or failure) instead of being skipped by an early return; `run_id`
+  threaded through `_pl_refresh_ok()`/`_run_pl_refresh_subprocess()` into the subprocess's
+  `--run-id` argv; updated the P&L failure notification wording (Drive-CSV-specific
+  language replaced with API-appropriate wording).
+- `tests/test_db_cache_quickbooks_pl.py`: renamed the 2 Drive-based test call sites to
+  match the rename; +19 new tests for `_daily_pl_window()`/`_refresh_one_pl_via_api()`/
+  `refresh_quickbooks_pls()`, including the Step 6-required "Denver success plus Greeley
+  failure does not mark both fresh" case.
+- `tests/test_scheduled_pull.py`: inverted `test_pl_gate_not_reached_when_pull_itself_fails`
+  → `test_pl_refresh_is_still_attempted_when_prompt_pull_itself_fails` (proving the fixed
+  behavior, not the old bug); +4 new tests for run_id generation/passthrough.
+
+`pytest tests/ -q` → **610 passed** (587 baseline + 19 + 4), no regressions.
+
+## Round 1 — Codex (Step 6)
+
+Confirmed the overall approach (reusing the existing subprocess/timeout/JSON-validation
+plumbing, the freshness-verdict reuse, the control-flow reorder) is sound. Seven findings:
+
+1. **Both P&Ls are not independently bounded** — Greeley and Denver run sequentially
+   inside ONE subprocess with ONE overall timeout; a hung/slow Greeley request could
+   consume the whole budget and prevent Denver from ever being attempted.
+2. **Overlapping runs can cause stale-writer corruption** — DuckDB transactions prevent
+   torn writes, but nothing prevents an older, slower run's commit from landing after a
+   newer run's and overwriting fresher data; the installer relies on Task Scheduler's
+   implicit `IgnoreNew` default rather than setting it explicitly.
+3. **Failure reasons are discarded** — `_refresh_one_pl_via_api()` returns only an
+   exception class name; `_run_pl_refresh_subprocess()` captures but never logs the
+   child's stderr.
+4. **A combined Prompt + QuickBooks failure hides the QuickBooks diagnostic** — when
+   Prompt fails, only the Prompt notification is sent; P&L's own failure that same run is
+   invisible in the one notification Nate actually sees.
+5. **No durable degraded/blocked status is persisted** — publication is skipped but
+   nothing records a durable run summary; an operator must infer state from transient
+   logs/Telegram.
+6. **The timestamp requirement is only incidentally met** — a `run_id` is created but no
+   explicit `started_at`.
+7. **Facility/company binding is not independently verified** — the API result's
+   `company_alias`/`realm_id` are trusted while the merge target is chosen from the
+   caller's `facility` string; a realm authorized under the wrong alias could
+   theoretically cross-contaminate a table.
+
+Also noted: tests don't cover overlap, first-facility-timeout, combined-failure, or
+stderr-observability cases.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All seven verified against actual source before disposing. Four fixed outright, one
+partially fixed, two rejected as out of scope with reasoning recorded:
+
+1. **Fixed.** Verified the real worst-case math: at qbo_config's DEFAULT settings
+   (`report_timeout_seconds=30`, `max_retries=3`), one facility's
+   `fetch_profit_and_loss_resilient()` worst case ≈ 203s (initial token refresh ~40s +
+   3 transient attempts ~123s + one forced-refresh-on-401 detour ~40s); two facilities
+   sequential ≈ 406s — already exceeding the old `PL_REFRESH_TIMEOUT_SECONDS = 180`.
+   Raised to 480s (documented math in a code comment), leaving real margin at default
+   config while staying well under the scheduled task's 30-minute `ExecutionTimeLimit`
+   even combined with a worst-case 900s interactive Prompt retry. Noted honestly that an
+   operator who raises `QBO_MAX_RETRIES`/`QBO_REPORT_TIMEOUT_SECONDS` toward their caps
+   could still exceed this — that fails closed (both facilities reported failed, nothing
+   published), not silently wrong, so not treated as a residual bug.
+2. **Partially fixed.** Added `-MultipleInstances IgnoreNew` explicitly to
+   `install_task()`'s `New-ScheduledTaskSettingsSet` call — cheap, zero new complexity,
+   makes an already-true implicit Task Scheduler default explicit rather than relying on
+   it silently staying true. The deeper "reject a stale commit from an older run"
+   ordering guard was **rejected as out of scope for this step**: it is an identical,
+   pre-existing architectural characteristic of `refresh_pl()`'s DROP+CREATE pattern
+   (used by the Drive-era path since before this task began) and of
+   `merge_quickbooks_pl_periods()` (Step 4, already reviewed 4 rounds) — not a regression
+   Step 6 introduces, and building a new run-ordering/locking subsystem is materially
+   more scope than "integrate the direct API into the existing daily run." DuckDB's own
+   file-level write lock already prevents a torn/corrupt write (a genuine concurrent
+   write attempt fails loudly, it does not corrupt); the manual-invocation-overlap
+   scenario is real but pre-existing and out of proportion to this step.
+3. **Fixed the safe half; rejected the stderr-logging half with reasoning.** Added
+   `error_http_status`/`error_code`/`error_intuit_tid` fields to
+   `_refresh_one_pl_via_api()`'s result (Step 5's already-sanitized `OAuthError`/
+   `PLApiError` attributes via `getattr()`, defaulting to `None`), surfaced in
+   `scheduled_pull.py`'s per-facility log line — genuinely actionable diagnostic detail
+   that was already computed by Step 5 and simply never threaded through. Logging the
+   child subprocess's raw stderr on non-zero exit was **rejected**: this is not an
+   oversight but a previously reviewed, deliberate decision from the *original*
+   `PLAN-QUICKBOOKS-DAILY-PULL.md` (its own Round 2, item 2) specifically to never echo
+   raw stdout/stderr content, since a non-zero exit means something escaped the
+   structured-JSON handling and isn't a known-safe shape — reversing that decision now
+   would need its own justification and review, not a one-line addition inside an
+   unrelated step.
+4. **Fixed.** When Prompt fails AND `_pl_refresh_ok()` also returns `False`, the Prompt
+   failure notification now appends one line pointing at the log for which facility and
+   why. Confirmed a Prompt-only failure (P&L healthy) does NOT get this note (a dedicated
+   negative test).
+5. **Rejected as out of scope**, citing the plan's own explicit "Out of scope" section
+   for this step: "Persisting retry/error metadata durably (vs. just returning it) —
+   Step 7's Data Freshness design question, same disposition as Step 4's metadata
+   fields." A durable run-summary/degraded-marker record is exactly this category of
+   work and belongs to Step 7, not Step 6.
+6. **Fixed.** Added an explicit `started_at = datetime.now(timezone.utc).isoformat()`
+   captured once at the top of `run_pull()` and included in the startup log line,
+   alongside `run_id`.
+7. **Rejected as out of scope, with a documented partial mitigation already in place.**
+   The realistic failure mode here is a *human* authorizing the wrong QuickBooks company
+   during the one-time interactive `connect()` flow (Step 3) — no runtime code in Step 6
+   can detect this without already knowing which realm ID *should* correspond to which
+   alias, and nobody has connected either company yet (Step 8 is where real realm IDs
+   first become known). Step 3's `_check_realm_not_used_by_another_company()` already
+   prevents the same realm from being saved under two different aliases; full
+   expected-realm pinning is better placed in Step 8/9 once real realm IDs exist to pin
+   against. Partial mitigation already present and unchanged: `realm_id` is already
+   threaded through and persisted per-facility via `merge_quickbooks_pl_periods()` →
+   `_save_meta()`'s `f"quickbooks_api:{facility}:realm={realm_id}"` marker, so a future
+   `data_inventory.py`-style check could detect an unexpected realm_id change for a given
+   facility across runs.
+
+**Self-caught during verification, not a Codex finding:** two existing tests
+(`test_session_expired_then_interactive_retry_fails_notifies_and_skips_publish`,
+`test_unrelated_exception_behavior_unchanged`) never mocked `_pl_refresh_ok()`, because
+before this step's restructuring their code paths returned before ever reaching it. With
+P&L now always attempted, both would have spawned a REAL `pythonw.exe db_cache.py
+--quickbooks-pl` subprocess against this machine's actual `.env` QBO credentials and
+local token store on every test run — harmless today only because no token has been
+saved yet (fails fast on `OAuthError` before any network call), not something a unit
+test should depend on. Fixed by adding the same explicit mock every other test in the
+file already uses.
+
+Tests: 5 new in `tests/test_scheduled_pull.py` (combined-failure notification mentions
+both / Prompt-only failure does not mention P&L / structured error-detail fields logged
+when present / omitted cleanly when absent / `started_at` logged), plus the 2 test-
+isolation fixes above. `pytest tests/ -q` → **615 passed** (610 + 5), no regressions.
+
+## Round 2 — Codex (Step 6)
+
+Accepted findings 5 and 7's deferrals as reasonable. Pushed back on the remaining three:
+
+1. **The 480s timeout is still under-calculated.** A corrected worst-case trace: an
+   expired token needs `fetch_discovery()` (~20s) + `refresh_access_token()` (~40s) =
+   ~60s; a 401 mid-loop triggers a SECOND full discovery+refresh detour (~60s more); then
+   up to 3 transient attempts (~123s) — ~243s per facility (Codex's own estimate: ~283s),
+   ~486-566s for two sequential. Both estimates exceed 480s. This can still let one
+   facility's hang/retry-storm consume the shared budget before the other is ever
+   attempted.
+2. **The overlap disposition is incomplete.** Explicit `IgnoreNew` is reasonable for
+   ordinary Task-Scheduler launches, but doesn't protect manual invocations or a
+   timed-out child whose taskkill itself fails; DuckDB's lock prevents a torn/concurrent
+   write, not an older run's stale commit landing after a newer run's. Fix: at minimum a
+   Job Object/mutex, "or document that the overlap requirement is intentionally unmet
+   rather than calling the database lock sufficient."
+3. **The error-detail fix still loses the actual cause for retry exhaustion.**
+   `RetryExhaustedError` carries no `http_status`/`code`/`TID` of its own; the sanitized
+   final cause is available via `__cause__` (`raise RetryExhaustedError(...) from
+   last_exc`) but the result-dict fields were read only off the outer exception — a
+   rate-limit or server-error exhaustion logs only the bare `RetryExhaustedError` class
+   name, not the real HTTP status/provider error/TID that caused it.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All three verified against actual source; all three fixed — two with a structural
+change rather than another arithmetic patch, one with an honest documentation
+correction rather than a false "solved" claim:
+
+1. **Fixed structurally, not just re-calculated.** Verified the corrected worst-case math
+   is right (~243s/facility at default config, confirmed by re-deriving each timeout
+   component from source: `_CONNECT_TIMEOUT_SECONDS=10`, `fetch_discovery`'s own default
+   `timeout=10`, `config.report_timeout_seconds` default 30, `max_retries` default 3).
+   Rather than picking a third, larger combined number that could still be wrong for a
+   different config, restructured to the design Codex itself suggested: each facility now
+   runs as its own independent subprocess (`db_cache.py --quickbooks-pl --facility
+   <name>`, a new CLI flag backed by a new `db_cache.refresh_one_quickbooks_pl()`
+   single-facility entrypoint), each with its own `PL_REFRESH_TIMEOUT_SECONDS=360`
+   (documented corrected math, ~48% margin over the 243s single-facility worst case). A
+   hung/slow Greeley subprocess is now taskkill'd on its own schedule without ever
+   affecting whether Denver's own separate subprocess even starts — genuinely guaranteed
+   by process-boundary isolation, not by getting a shared arithmetic bound exactly right.
+   `refresh_quickbooks_pls()` (the combined manual/CLI entrypoint) now delegates to the
+   same single-facility function, so there is one source of truth, not two diverging
+   implementations. New test,
+   `test_pl_refresh_ok_greeley_timeout_does_not_prevent_denver_attempt`, directly proves
+   the property Codex named: Greeley's subprocess times out and fails closed while
+   Denver's independent subprocess still runs, completes, and is reported acceptable.
+2. **Fixed by taking Codex's own offered alternative: honest documentation instead of a
+   false "solved" claim.** Rewrote `install_task()`'s docstring to explicitly state what
+   `-MultipleInstances IgnoreNew` does NOT cover (manual invocations) and to correct the
+   overstated claim that DuckDB's write lock is a sufficient backstop — it prevents a
+   torn/concurrent write, not an older run's stale commit landing after a newer run's.
+   Explicitly named the real fix (an application-level mutex or Windows Job Object) and
+   recorded it as deliberately out of scope for this step rather than silently implying
+   the gap was closed.
+3. **Fixed.** Added `db_cache._extract_error_detail(exc)`: reads `http_status`/
+   `error_code`/`intuit_tid` directly off the caught exception when it defines
+   `http_status` at all (true for every `OAuthError`/`PLApiError` subclass), otherwise
+   falls back to `exc.__cause__` (true for `RetryExhaustedError`, whose real cause is
+   always chained via `raise ... from last_exc`). Four new tests: reading directly from a
+   typed exception, falling back to a chained cause for `RetryExhaustedError`, handling a
+   plain exception with no cause at all (returns `None`/`None`/`None`, not a crash), and
+   an end-to-end test through `_refresh_one_pl_via_api()` proving a genuinely exhausted
+   429 rate-limit retry surfaces `error_http_status=429`/`error_intuit_tid` in the result,
+   not just the wrapper's class name.
+
+Also updated (mechanically, to match the new per-facility subprocess design): all
+`tests/test_scheduled_pull.py` P&L-subprocess tests now mock TWO independent `Popen`
+calls (dispatched by the `--facility` argv) instead of one combined-JSON call; one old
+test (`_facility_key_is_missing`, which tested a combined-dict shape that no longer
+exists once each subprocess returns exactly one facility's JSON directly) was removed as
+no-longer-applicable, its coverage intent absorbed by the existing per-facility shape
+validation tests.
+
+Tests: 8 new in `tests/test_db_cache_quickbooks_pl.py`
+(`refresh_one_quickbooks_pl`/`_extract_error_detail`/delegation/retry-exhausted-cause), 1
+new test in `tests/test_scheduled_pull.py`
+(`test_pl_refresh_ok_calls_two_independent_subprocesses_one_per_facility`) plus the
+Greeley-timeout-doesn't-block-Denver test already counted above, mechanical rewrites of
+12 existing P&L-subprocess tests, 1 test removed as obsolete.
+`pytest tests/ -q` → **624 passed** (615 + 9), no regressions.
+
+## Round 3 — Codex (Step 6)
+
+Confirmed the per-facility subprocess design and chained-error extraction are sound.
+Escalated on the overlap finding specifically — rejected Round 2's "document as out of
+scope" disposition as insufficient, since Step 6's compliance plan names "prevent
+overlapping runs from corrupting data" as an explicit, numbered requirement (#9), not an
+optional nice-to-have:
+
+1. **Overlap safety must actually be implemented, not just documented as unmet** — "since
+   Step 6 explicitly requires preventing overlapping runs from corrupting data,
+   documenting this as out of scope is not enough for approval." Suggested fix: an
+   application mutex, Job Object, or commit-generation guard.
+
+Two non-blocking observations also raised:
+
+2. The corrected timeout comment still undercounted by one component: it added the
+   initial-refresh (60s) + forced-refresh-on-401 (60s) + 3 transient attempts (123s) =
+   243s, but omitted the cost of the FIRST API request itself — the one that actually
+   discovers the 401 and triggers the forced refresh (~40s). Real worst case ≈ 283s.
+3. `test_pl_refresh_ok_greeley_timeout_does_not_prevent_denver_attempt` doesn't prove
+   what its name claims: `_run_pl_refresh_subprocess()` iterates
+   `sorted(_EXPECTED_PL_FACILITIES)` = `["denver", "greeley"]`, so Denver actually runs
+   FIRST — the test had Greeley (running second, after Denver already succeeded) be the
+   one that hangs, which proves nothing about an earlier hang's effect on a later
+   attempt.
+
+VERDICT: REVISE
+
+### Claude's response
+
+Accepted the escalation on finding 1 without further pushback — it is a fair, correct
+reading of the plan's own explicit requirement list, and this project's established
+convention (Steps 1/2/4/5) is to fix a confirmed real finding, not re-argue a disposition
+Codex has now explicitly rejected twice. Fixed all three:
+
+1. **Fixed by reusing this codebase's own already-4-round-reviewed pattern** —
+   `publish_uploader.py`'s `_publish_lock` (an OS-level `msvcrt.locking()` byte-range
+   lock, non-blocking, no stale-lock heuristic needed since the OS releases it the
+   instant the holding process's file handle closes). Added a structurally identical
+   `scheduled_pull._run_lock` guarding one full `run_pull()` execution end-to-end, with
+   its own separate lock file (`data/scheduled_pull.lock`, distinct from
+   `publish_uploader`'s own — the two compose safely, guarding different scopes).
+   `run_pull()` is now a thin wrapper: it acquires the lock before doing anything else
+   (renamed the actual pull logic to `_run_pull_locked()`), and on a genuine
+   already-in-progress conflict, logs an error, sends one Telegram notification (new —
+   this failure mode didn't exist before), and returns 1 without attempting anything.
+   This closes the gap for BOTH Task-Scheduler-triggered AND manual-invocation overlaps —
+   the exact distinction Round 2's `-MultipleInstances IgnoreNew`-only fix could not
+   cover. A bug was caught by the test suite itself during verification, not by Codex:
+   the first version's `except RuntimeError:` in `run_pull()` was too broad — it would
+   have silently swallowed and mis-reported ANY `RuntimeError` raised from inside the
+   actual pull logic as "another run is already in progress," not just genuine lock
+   conflicts. Fixed by introducing a dedicated `_RunLockHeldError(RuntimeError)`
+   subclass, raised only by `_run_lock.__enter__()`'s own failure path, and narrowing
+   `run_pull()`'s except clause to that subclass specifically. Three new tests: a
+   genuinely-held lock causes a skip-and-notify (using the same real-lock-contention
+   technique `publish_uploader.py`'s own tests already established as proven on
+   Windows); the lock does not leak across a completed prior run; and the lock is
+   correctly released even when the wrapped body raises an unrelated exception (this is
+   the test that caught the `except RuntimeError` bug above). All existing tests that
+   call `run_pull()` needed an autouse fixture redirecting `RUN_LOCK_PATH` to an isolated
+   `tmp_path`, so they don't contend for the real project's lock file or each other.
+2. **Fixed.** Re-derived the exact worst-case sequence step by step and confirmed
+   Codex's correction: the first API attempt (the one that discovers the 401) does cost
+   its own ~40s, separate from the refresh calls before and after it. Corrected the
+   comment's arithmetic to the accurate ~283s, and raised `PL_REFRESH_TIMEOUT_SECONDS`
+   from 360 to 400 for a rounder ~41% margin, with the total-budget tradeoff (now ~1.7
+   minutes of margin under the 30-minute `ExecutionTimeLimit` in the specific compound
+   worst case of both facilities timing out AND a full interactive Prompt retry)
+   explicitly acknowledged as tight-but-safe, since `ExecutionTimeLimit` itself is a
+   clean failure mode (task killed, transactional writes roll back, next run tries
+   again), not a correctness risk.
+3. **Fixed.** Rewrote the test as
+   `test_pl_refresh_ok_earlier_facility_timeout_does_not_prevent_the_later_attempt`,
+   asserting the actual iteration order explicitly (`sorted(...) ==
+   ["denver", "greeley"]`, so a future change to that order fails this test loudly
+   instead of silently making it meaningless again), and swapped the roles so Denver
+   (which genuinely runs first) is the one that hangs, proving Greeley (running second)
+   is still independently attempted afterward.
+
+Tests: 3 new in `tests/test_scheduled_pull.py` (lock contention / lock release across
+runs / lock release on an unexpected exception), 1 autouse fixture added, 1 existing test
+corrected (not merely renamed) to test the real execution order.
+`pytest tests/ -q` → **627 passed** (624 + 3), no regressions.
+
+## Round 4 — Codex (Step 6, MAX_ROUNDS)
+
+Confirmed the normal overlap path, error extraction, and facility-order test fixes are
+sound. One further finding, plus a smaller cleanup note:
+
+1. **The lock does not protect against Task Scheduler killing the parent while a
+   descendant survives.** Codex's own re-derived budget: `900s` interactive retry +
+   `2 x 400s` P&L timeouts = `1700s` — but each timeout path ALSO runs `taskkill` (up to
+   30s) + a confirmation `wait()` (up to 10s) on top of the bare `communicate()` timeout,
+   reaching roughly `1820s`, which exceeds the 30-minute (`1800s`) `ExecutionTimeLimit`.
+   If Task Scheduler's own limit fires first (rather than the script's own bounded
+   timeouts resolving first, with a real `taskkill /T` process-tree kill), it kills
+   `scheduled_pull.py` itself from outside while a child subprocess could still be
+   mid-write — orphaning it (no `taskkill /T` ever runs against it) and releasing
+   `_run_lock` (scoped to the parent's own file handle) while that orphan is still alive,
+   exactly the gap a same-day overlapping run could then race against.
+2. (Non-blocking) The lock-conflict notification advised deleting the lock file — a
+   category error for an OS-managed lock, and possibly harmful if it encouraged deleting
+   a file out from under a lock in a way that could confuse future tooling.
+
+VERDICT: REVISE
+
+This is Round 4, `MAX_ROUNDS` for this step. Per this project's established convention
+(Steps 1, 2, 4, and 5 all converged the same way): Claude verified this finding directly
+against source, confirmed it real, fixed it, and is documenting this as a **self-verified
+closure at MAX_ROUNDS** rather than spending an unavailable fifth round.
+
+### Claude's response (self-verified closure)
+
+Verified real: re-derived the same worst-case sum independently
+(`940 + 440 + 440 = 1820s`) and confirmed it exceeds the existing 1800s
+`ExecutionTimeLimit`. Chose the simpler of Codex's own two offered fixes ("make the
+complete timeout-and-cleanup budget fit below the task limit and verify descendant
+termination") over building a Windows Job Object from scratch — a real, untested,
+Windows-specific low-level API surface this session cannot verify end-to-end without a
+live Windows Task Scheduler run, versus a one-line settings change plus already-existing
+verification (the taskkill/`wait()`/distinct-logging sequence `_run_single_pl_subprocess()`
+and `_run_interactive_retry()` already both perform on every timeout path, which
+directly satisfies the "verify descendant termination" half of Codex's own suggestion).
+Fixed:
+
+1. Raised `install_task()`'s `-ExecutionTimeLimit` from 30 to 45 minutes (`2700s`),
+   giving `2700 - 1820 = 880s` (~14.7 minutes) of real margin over the corrected
+   worst-case total, so the script's own bounded timeouts and real `taskkill /T`
+   process-tree kills always resolve first, on their own terms — Task Scheduler's
+   external kill (the actual mechanism that could orphan a descendant) never needs to
+   fire in the modeled worst case. Rewrote the `PL_REFRESH_TIMEOUT_SECONDS` and
+   `ExecutionTimeLimit` comments to show the complete budget including the taskkill/wait
+   overhead this round's finding caught missing, not just the bare `communicate()`
+   values.
+2. Removed the "delete the lock file" advice from the lock-conflict notification —
+   replaced with directing the operator to check Task Manager for a genuinely
+   still-running process, since the OS releases an OS-level lock automatically the
+   instant the holding process's file handle closes; there is nothing to manually clean
+   up, and the file itself should never need to be touched.
+
+`pytest tests/ -q` → **627 passed** (unchanged count — this round's fixes were
+comments/constants/message text, no new test functions), no regressions.
+
+**Step 6: CONVERGED via self-verified closure at MAX_ROUNDS.** Four rounds, 15 total
+findings (7 + 3 + 3 + 2, including the two non-blocking observations in Rounds 3/4),
+zero rejected without a recorded, verified reason — and the one disposition Codex itself
+rejected (Round 2's overlap "documented as out of scope") was subsequently escalated and
+genuinely fixed in Round 3, not re-argued. Step 7 (observability and Data Freshness
+reporting) is unblocked.
+
+---
+
+## Step 7 — Complete observability and Data Freshness reporting
+
+`PLAN.md` overwritten with the Step 7 plan. New Codex thread for this step. MAX_ROUNDS=4.
+
+Research (a background Explore agent, read in full before writing any code) mapped the
+existing Data Freshness surfaces precisely: the public bundle's `freshness` report
+(`publish_exporter.build_freshness()`) exposes exactly
+`{schema_version, table_name, row_count, loaded_at, age_days, verdict, source_period}`
+today; of Step 7's 8 required fields, status/age/represented-source-period were already
+present, company alias was derivable but unexposed, last successful retrieval was
+present but conflated with the merge wall-clock, and last retrieval attempt plus a
+sanitized failure/reconnect reason had **no durable substrate anywhere** — a failed
+fetch wrote nothing, and a timed-out/killed subprocess left no trace beyond a rotating
+log line. `_cache_meta` could not be widened in place (`_save_meta()`'s positional
+`INSERT`, `_ensure_meta()`'s `CREATE IF NOT EXISTS`) without a real migration, and
+semantically must only ever reflect a *successful* load — exactly the distinction
+Step 7 needs.
+
+Code written before review:
+- `db_cache.py`: new `_pl_retrieval_status` table (one row per P&L table, current-state,
+  never widening `_cache_meta`); `_record_pl_retrieval_attempt()`/
+  `_record_pl_retrieval_attempt_safe()` (never raises); public reader
+  `pl_retrieval_status(table_name, con=None)` (reuses a caller-supplied, possibly
+  read-only connection without ever attempting `CREATE TABLE` on it); `_lookup_reconnect_reason()`
+  (reads `qbo_token_store` state, snapshotted at attempt time); `_refresh_one_pl_via_api()`
+  now records every attempt (success and failure) via the same connection it already
+  had open.
+- `scheduled_pull.py`: `_pl_subprocess_error_result()` now also records a
+  `"SubprocessError"`-flavored failed attempt directly from the parent process for the
+  5 subprocess-plumbing-level failure paths (start failure, timeout, non-zero exit,
+  unparseable output, malformed shape) that never reach `db_cache.py`'s own recording at
+  all.
+- `data_inventory.py`: the local diagnostic surface now shows last attempt/last
+  success/reconnect-or-failure reason for `greeley_pl`/`denver_pl`, reusing its own
+  already-open read-only connection.
+- Public bundle pipeline: `publish_schema.py` (+`ALLOWED_COMPANY_ALIAS_VALUES`/
+  `ALLOWED_PL_SOURCE_VALUES`/`ALLOWED_PL_FAILURE_REASONS` — a closed, explicit enum with
+  an `"OtherError"` fallback, mirroring `qbo_oauth._sanitize_error_code()`'s policy;
+  +`nullable_timestamp`/`company_alias_enum`/`pl_source_enum`/`pl_failure_reason_enum`
+  kinds; `freshness` report schema +5 fields; `SCHEMA_VERSION` 2.0.0 → 2.1.0),
+  `publish_exporter.py` (`build_freshness()` +5 fields per row, `""` not-applicable
+  defaults for the 3 non-P&L tables, looked up BEFORE the missing/unknown/normal branch
+  split since a P&L table can have recorded failed attempts even when the table itself
+  doesn't exist yet), `publish_site_constants.py` (+3 new allowlists, regenerated
+  `remote_site/schema_constants.json`), `remote_site/app.js` (`enumSets` +3 kinds,
+  `renderFreshness()` +4 columns: Company/Last Attempt/Last Success/Reason).
+- Tests: 15 new in `tests/test_db_cache_quickbooks_pl.py`, new file
+  `tests/test_data_inventory.py` (4 tests), 17 new in `tests/test_publish_contract.py`/
+  `tests/test_publish_exporter.py` combined, 4 new in `tests/test_remote_site.py`
+  (including a full pipeline test: a real recorded failure flows through
+  `db_cache` → `publish_exporter` → the scanner → the manifest → a real headless-browser
+  render).
+
+`pytest tests/ -q` → **665 passed** (648 baseline + 17), no regressions.
+
+## Round 1 — Codex (Step 7)
+
+Confirmed the content-based FRESH verdict is sound (cannot be falsely improved by a
+superficial HTTP success). Five findings:
+
+1. **`refresh_one_quickbooks_pl()`'s config-load-failure path never records an
+   attempt.** It returns a structured error dict BEFORE ever reaching
+   `_refresh_one_pl_via_api()` (the only place that normally records) — Step 7's own
+   explicit "not-configured" test case left zero durable trace anywhere.
+2. **`_run_single_pl_subprocess()` writes `"SubprocessError"` even when `proc.wait()`
+   itself times out after taskkill** (termination NOT confirmed) — the child may still
+   be alive and mid-write, directly contradicting `_pl_subprocess_error_result()`'s own
+   docstring claim of "never a concurrent writer."
+3. **`_record_pl_retrieval_attempt()`'s read-then-`INSERT OR REPLACE` has no ordering
+   guard** — overlapping refreshes (a manual run racing the scheduled one, or two calls
+   completing out of the order they started in) could move `last_attempt_at`/
+   `last_success_at` backward in time.
+4. **The browser validator doesn't require the 3 new enum arrays in
+   `REQUIRED_CONSTANT_ARRAYS`, and `nullable_timestamp` gets only presence
+   validation** — a truncated `schema_constants.json` missing the new arrays would pass
+   `validateConstants()` and silently disable validation of the new fields.
+5. **The plan's own "Implementation summary" claims `merge_quickbooks_pl_periods()`'s
+   result is captured for Step 7 metadata — it isn't**; `_refresh_one_pl_via_api()`
+   still discards it, matching Step 6's existing behavior.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All five verified against actual source before fixing; none disputed:
+
+1. **Fixed.** `refresh_one_quickbooks_pl()`'s `except Exception as exc:` branch (the
+   config-load failure) now records the failed attempt directly via
+   `_record_pl_retrieval_attempt_safe()` before returning, using the same `error_type`
+   the returned result dict already carries.
+2. **Fixed.** `_pl_subprocess_error_result()` gained a `record_attempt=True` parameter;
+   the ONE call site where termination is genuinely unconfirmed
+   (`except subprocess.TimeoutExpired:` around `proc.wait(timeout=10)`, itself nested
+   inside the outer timeout handler) now passes `record_attempt=False` — silently
+   recording nothing is more honest than asserting a state this process cannot actually
+   verify, and the next scheduled run's own attempt naturally produces a fresh,
+   unambiguous record. Corrected the function's docstring, which had overclaimed "never
+   a concurrent writer" for every call site including this one.
+3. **Fixed.** `_record_pl_retrieval_attempt()` now reads the existing row's
+   `last_attempt_at` alongside `last_success_at` and silently ignores (no write at all)
+   any attempt whose `attempted_at` is strictly older than what's already recorded — a
+   real, load-bearing ordering guard, not cosmetic, since the table's plain current-
+   state upsert design has no version/sequence column to otherwise prevent a slower-
+   but-earlier-recorded write from landing after a faster-but-later one.
+4. **Fixed.** Added the 3 new arrays to `app.js`'s `REQUIRED_CONSTANT_ARRAYS`. Added an
+   explicit `nullable_timestamp` branch to `validateBundleShape()`'s kind dispatch
+   (`"" or a string"`, matching `"timestamp"`'s own shallow client-side validation
+   depth — neither kind does a full calendar parse client-side, Python remains
+   authoritative for that).
+5. **Fixed by correcting the plan, not expanding scope** (Codex's own offered
+   alternative): the inaccurate claim was removed from `PLAN.md` and replaced with an
+   explicit correction noting the discard is unchanged from Step 6 and that none of
+   Step 7's actual required fields need this metadata — persisting it remains
+   explicitly out of scope, same disposition as Step 6's identical fields.
+
+Tests: 4 new (`test_refresh_one_quickbooks_pl_config_load_failure_records_the_attempt`,
+`test_record_pl_retrieval_attempt_ignores_an_out_of_order_older_attempt`,
+`test_record_pl_retrieval_attempt_accepts_an_attempt_with_the_same_timestamp`,
+`test_pl_subprocess_error_result_skips_recording_when_termination_unconfirmed`), plus 2
+existing tests (`test_refresh_one_quickbooks_pl_config_load_failure_reports_cleanly`,
+`test_refresh_quickbooks_pls_config_load_failure_reports_both_facilities`) given the
+same `db_path`/`connect` isolation every other DB-touching test in the file already
+uses, since they would otherwise now hit the real production database once the config-
+load-failure path started recording.
+
+`pytest tests/ -q` → **669 passed** (665 + 4), no regressions.
+
+## Round 2 — Codex (Step 7)
+
+Confirmed the five Round 1 fixes are present and the content-based freshness verdict
+remains sound. Four further findings:
+
+1. **The monotonic guard is not concurrency-safe** — a separate SELECT then `INSERT OR
+   REPLACE` has a genuine TOCTOU race: two writers can both read the same old row
+   before either has written, and the older attempt can still "win" by writing second.
+2. **The unconfirmed-timeout path recording nothing means a real retrieval attempt can
+   remain invisible indefinitely** if the child never later writes its own status —
+   preserves DB safety but doesn't satisfy "last retrieval attempt" observability.
+3. **Both the config-failure path and `_refresh_one_pl_via_api()`'s failure path call
+   `connect()` outside the safe recording wrapper** — a DuckDB lock/open failure can
+   therefore still violate the documented "never raises" contract and lose the
+   observability record.
+4. **`PLAN.md` still claims every subprocess failure path is safe because `proc.wait()`
+   is confirmed**, but the implementation has an intentional unconfirmed-termination
+   exception with `record_attempt=False`.
+
+VERDICT: REVISE
+
+### Claude's response
+
+All four verified against actual source before fixing; none disputed:
+
+1. **Fixed with a genuinely atomic single-statement upsert**, not another patch to the
+   two-statement version. Verified DuckDB supports `INSERT ... ON CONFLICT (col) DO
+   UPDATE SET ... WHERE <condition>` directly (confirmed with a standalone script
+   before touching the real function) and rewrote `_record_pl_retrieval_attempt()`
+   around it: the monotonic ordering check moves into the `WHERE` clause
+   (`excluded.last_attempt_at >= _pl_retrieval_status.last_attempt_at`), and
+   `last_success_at`'s preserve-or-advance logic moves into a `CASE` expression
+   referencing the pre-existing row's own column inside `DO UPDATE` — the entire
+   read-decide-write sequence is now one atomic DuckDB operation with no window for a
+   second writer to interleave. All 15 existing tests for this function passed
+   unchanged against the rewrite, confirming behavior-preserving.
+2. **Fixed by recording a distinct, honest reason instead of either extreme.** Round 1
+   skipped recording entirely to avoid a confident-but-possibly-wrong outcome; Round 2
+   corrected this by adding a new closed enum value, `"UnconfirmedTermination"`,
+   recorded specifically for this one ambiguous case — distinct from the confident
+   `"SubprocessError"` used for the other 4 subprocess-failure paths. This is safe
+   specifically BECAUSE of fix 1: since the upsert is now a genuinely atomic monotonic
+   operation, if the child really was still alive and later completes for real, its own
+   necessarily-later write always wins over this placeholder: the honest-uncertainty
+   record either gets superseded by the truth, or persists as exactly the correct
+   "we don't know what happened" signal if the child never finishes.
+3. **Fixed.** Added `_record_pl_retrieval_attempt_with_fresh_connection()`, wrapping
+   `connect()` itself (not just the recording query) in the same never-raises
+   discipline `_record_pl_retrieval_attempt_safe()` already applies to the query alone.
+   Replaced the unprotected `con = connect(); try: ...; finally: con.close()` blocks at
+   both call sites (`_refresh_one_pl_via_api()`'s failure path,
+   `refresh_one_quickbooks_pl()`'s config-load-failure path) with this helper, and also
+   simplified `scheduled_pull._pl_subprocess_error_result()` to reuse the same helper
+   rather than duplicating the same protection a second time in a different module.
+4. **Fixed.** Corrected the plan's "Write point 2" section to explicitly name the one
+   exception (unconfirmed termination) and explain why it's handled differently, rather
+   than leaving the earlier, now-inaccurate blanket safety claim in place.
+
+Tests: 3 new (`_record_pl_retrieval_attempt_with_fresh_connection`'s own connect-failure
+safety, plus the same proven end-to-end for both of its real call sites), 1 existing test
+rewritten to verify the new recorded behavior (`UnconfirmedTermination` distinctly
+recorded, not skipped) rather than the old skip-entirely behavior it used to assert.
+
+`pytest tests/ -q` → **672 passed** (669 + 3), no regressions.
+
+## Round 3 — Codex (Step 7)
+
+Confirmed the Round 2 fixes are present, including the atomic upsert and the new
+enum's public wiring. One further, more subtle finding:
+
+1. **The parent's fallback record can still overwrite a real child result.** A child
+   may successfully merge data and record `success`, then hang before process exit
+   (e.g. on something unrelated to the P&L work, like a slow flush); the parent later
+   records `SubprocessError`/`UnconfirmedTermination` with a NEWER timestamp (since its
+   fallback write, by construction, always happens strictly after the full timeout
+   elapses), so the atomic upsert correctly accepts the parent's write by timestamp
+   ordering — and falsely replaces the child's genuine success. The Round 2 claim that
+   "a later child result necessarily wins" is not always true: the child's result may
+   already have been written, earlier, before the parent even finishes waiting.
+
+VERDICT: REVISE
+
+### Claude's response
+
+Verified real by tracing through the exact scenario Codex named: for the CONFIRMED-kill
+timeout path specifically (not just the unconfirmed one), a child can be forcefully
+killed by `taskkill /F /T` after it has ALREADY completed its real work and recorded its
+own success, if it then hangs on something else (unrelated to the P&L fetch itself)
+before returning control to `communicate()`. Since the parent's fallback write only
+happens after waiting the FULL timeout, its timestamp is often later in wall-clock time
+than the child's genuine, earlier completion — timestamp ordering alone cannot
+distinguish "the parent's write is later because it's more authoritative" from "the
+parent's write is later merely because it had to wait."
+
+**Fixed with run/attempt-ID correlation**, per Codex's own secondary suggestion (its
+primary suggestion, a shared pre-`Popen()` timestamp, was considered and rejected: since
+the monotonic guard accepts EQUAL timestamps via `>=`, a shared timestamp would only
+change WHICH write wins a tie to whichever executes the SQL statement second — typically
+the parent's fallback — solving nothing):
+
+- Added a `last_run_id` column to `_pl_retrieval_status`, threaded `run_id` through
+  `_record_pl_retrieval_attempt()`'s upsert and `pl_retrieval_status()`'s returned dict.
+- `_refresh_one_pl_via_api()` (both its success and failure recording calls) and
+  `refresh_one_quickbooks_pl()`'s config-load-failure path now pass their own `run_id`
+  through to the recording call — the CHILD process, when it does run, always records
+  under the SAME `run_id` the parent gave it via `--run-id`.
+- `scheduled_pull._pl_subprocess_error_result()` now checks, before writing ANY
+  fallback, whether `_pl_retrieval_status`'s current row for this table already carries
+  `last_run_id == run_id` — if so, the child already wrote its own authoritative result
+  for this EXACT attempt (whether success or its own failure classification), and the
+  parent's fallback guess is skipped entirely, by identity rather than by timestamp.
+  When `run_id` is `None` (a manual invocation without `--run-id`), the check is skipped
+  and the function falls back to always recording, matching pre-Round-3 behavior — a
+  disclosed, narrower-risk limitation for the one case with no correlation identifier
+  available at all.
+
+Tests: 4 new — `_record_pl_retrieval_attempt` stores/exposes `run_id`; the core
+regression reproducing Codex's exact scenario (a row already carrying the current
+attempt's `run_id` suppresses the fallback write entirely, verified against real mocked
+functions, not just a plausibility argument); a differing-`run_id` row does NOT suppress
+recording; and a `None` `run_id` preserves the original always-record behavior.
+
+`pytest tests/ -q` → **676 passed** (672 + 4), no regressions.
+
+## Round 4 — Codex (Step 7, MAX_ROUNDS)
+
+Confirmed the `run_id`-correlation design from Round 3 is the right idea. Two further
+findings:
+
+1. **The parent's identity check is still a TOCTOU race.** It reads
+   `pl_retrieval_status()`, then performs the fallback upsert separately; the child can
+   record its success between those two operations, after which the parent's same-run
+   fallback overwrites it anyway. Fix: make "skip if existing `last_run_id == run_id`"
+   part of the same conditional `ON CONFLICT` statement, with only parent fallback
+   writes using that condition.
+2. **`_pl_retrieval_status` schema migration gap.** `_ensure_pl_retrieval_status()` only
+   ever runs `CREATE TABLE IF NOT EXISTS`, which is a no-op against a table that already
+   exists from an earlier (pre-`run_id`) schema version — the new `run_id`-referencing
+   `INSERT ... ON CONFLICT` would then fail against such a table, while
+   `pl_retrieval_status()`'s own broad `except` would silently report "never attempted,"
+   hiding real observability history rather than surfacing the schema mismatch.
+
+VERDICT: REVISE
+
+This is Round 4, `MAX_ROUNDS` for this step. Per this project's established convention
+(Steps 1, 2, 4, 5, and 6 all converged the same way): Claude verified both findings
+directly against source, confirmed them real, fixed them, and is documenting this as a
+**self-verified closure at MAX_ROUNDS** rather than spending an unavailable fifth round.
+
+### Claude's response (self-verified closure)
+
+Both verified real against the actual Round 3 code before fixing:
+
+1. Confirmed the TOCTOU: `_pl_subprocess_error_result()`'s pre-check called
+   `db_cache.pl_retrieval_status(...)` as a plain read, then separately called
+   `_record_pl_retrieval_attempt_with_fresh_connection(...)` — two unrelated statements
+   with a real gap between them, exactly as Codex described; Round 3 closed the
+   *timestamp* race but reopened this identity-check race in the process. Rejected
+   Codex's own primary suggestion pattern of comparing against a value read earlier in
+   Python (same shape of bug, just narrower) in favor of pushing the entire check into
+   SQL. Added an `is_fallback` boolean parameter to `_record_pl_retrieval_attempt()`
+   (`db_cache.py`): the existing atomic `INSERT ... ON CONFLICT ... WHERE
+   excluded.last_attempt_at >= _pl_retrieval_status.last_attempt_at` guard is
+   unconditional and unchanged for ordinary (non-fallback) callers
+   (`_refresh_one_pl_via_api()`, `refresh_one_quickbooks_pl()` — both are the process
+   that actually did the work, never a guess). When `is_fallback=True` (the only caller
+   is `scheduled_pull._pl_subprocess_error_result()`), an additional predicate is
+   appended to the SAME `WHERE` clause, in the SAME statement: `AND NOT
+   (_pl_retrieval_status.last_run_id IS NOT NULL AND excluded.last_run_id IS NOT NULL
+   AND _pl_retrieval_status.last_run_id = excluded.last_run_id)`. Verified against a real
+   DuckDB instance (not a mock) via two new tests in `tests/test_scheduled_pull.py`
+   proving both orderings: a child's success for a given `run_id` survives a same-`run_id`
+   fallback write regardless of timestamp ordering, and a fallback for a *different*
+   `run_id` still records normally. Removed the now-redundant `pl_retrieval_status()`
+   pre-check and its import from `_pl_subprocess_error_result()` entirely — the function
+   now always calls the recording function unconditionally and lets the atomic `WHERE`
+   clause decide.
+2. Confirmed the migration gap by inspecting `_ensure_pl_retrieval_status()`: it indeed
+   only had `CREATE TABLE IF NOT EXISTS`. Verified `ALTER TABLE ... ADD COLUMN IF NOT
+   EXISTS` is idempotent in this project's DuckDB version via a standalone throwaway
+   script before touching the real function. Fixed by adding `con.execute("ALTER TABLE
+   _pl_retrieval_status ADD COLUMN IF NOT EXISTS last_run_id TEXT")` immediately after
+   the `CREATE TABLE IF NOT EXISTS`, so a table left over from a schema version that
+   predates `run_id` migrates in place on first use rather than silently breaking the
+   `run_id`-referencing upsert.
+
+Rewrote the three Round 3 tests in `tests/test_scheduled_pull.py` that exercised the
+now-removed pre-check pattern (they mocked `pl_retrieval_status()` directly, which no
+longer exists in the call path) with four replacements: two verify
+`_pl_subprocess_error_result()` always calls the recording function unconditionally with
+`is_fallback=True` and the `run_id` threaded through (one with a real `run_id`, one with
+`run_id=None`), and two are real-DuckDB end-to-end tests proving the atomic guard itself
+(same-`run_id` fallback blocked; different-`run_id` fallback applied). Added four new
+tests directly against `_record_pl_retrieval_attempt(..., is_fallback=...)` in
+`tests/test_db_cache_quickbooks_pl.py`: fallback blocked by a matching `run_id` despite a
+later timestamp, fallback applied when `run_id` differs, fallback applied when `run_id`
+is `None` on both sides (the guard requires both sides non-null, so `None` can never
+spuriously match), and a non-fallback (authoritative) call is never blocked by a matching
+`run_id`, only by the ordinary monotonic timestamp rule.
+
+`pytest tests/test_db_cache_quickbooks_pl.py tests/test_scheduled_pull.py -q` →
+**152 passed**, no regressions. `pytest tests/ -q` → **681 passed** (676 − 3 replaced + 8
+new), no regressions.
+
+**Step 7: CONVERGED via self-verified closure at MAX_ROUNDS.** Four rounds, 12 total
+findings (5 + 4 + 1 + 2), zero rejected without a recorded, verified reason — the one
+fix that was itself later found insufficient (Round 2's "later write always wins"
+timestamp-only guard, revised in Round 3, then Round 3's own run_id pre-check, replaced
+in Round 4 with the atomic `is_fallback` guard) was corrected for real each time, not
+re-argued. Data Freshness observability now has a durable, race-free substrate: every P&L
+retrieval attempt (success, API/OAuth failure, config-load failure, or subprocess-level
+failure/timeout/kill) is recorded exactly once per attempt, correctly attributed between
+a child's own authoritative result and a parent's fallback guess, and surfaced through
+`data_inventory.py` and the public `freshness` report. Step 8 (full regression tests and
+sandbox validation) is unblocked, pending Nate's Intuit sandbox credentials.
+
+---
+
+## Step 8 — Full regression tests and sandbox validation
+
+`PLAN.md` overwritten with the Step 8 plan. New Codex thread for this step. MAX_ROUNDS=4.
+Codex CLI 0.144.1, model `gpt-5.6-luna` (session default from `~/.codex/config.toml`),
+reasoning effort `high`.
+
+**Central question this review must answer first, ahead of ordinary code review:** a
+request in this session asserted live sandbox validation had already occurred for both
+companies, including a specific successful normalized March 2026 P&L result. Before
+accepting that, Claude independently checked the real system state and found: (1) both
+`greeley`/`denver` ARE genuinely connected in `qbo_token_store` (sandbox environment,
+real realm IDs, unexpired tokens, no reconnect required) — consistent with a real,
+human-run `connect()` having happened outside this conversation; but (2) `_pl_retrieval_status`
+(Step 7's durable per-attempt table, unconditionally created on every real P&L-refresh
+attempt) does not exist at all in `art_data.duckdb`; and (3) `greeley_pl`/`denver_pl`
+still carry the OLD raw-CSV-dump schema from the legacy Google-Drive path, not the
+normalized period/category rows the real QuickBooks API path produces — so no normalized
+March 2026 Income/Expenses/Net-Income category exists anywhere in the database. The
+claimed pull/parse result therefore appears to be false as stated, independent of
+whether connect() itself succeeded. Full detail in `PLAN.md`'s "Disputed claim" section.
+
+## Round 1 — Codex (Step 8)
+
+Codex's independent re-verification (own read-only sandbox could not decrypt the DPAPI
+token store, so it could not itself confirm `connect()` succeeded — noted as an
+environment limitation, not counter-evidence) and full findings, verbatim:
+
+> Independent conclusion: Step 8 is not satisfied.
+>
+> Disputed claim:
+> - OAuth connections: not independently confirmed. `data/qbo_tokens.enc` exists, but
+>   both public API reads fail with DPAPI decryption errors under this execution
+>   identity. File existence/mtime is not proof of valid sandbox tokens or realm
+>   mappings.
+> - Real P&L pull: no evidence found. `_pl_retrieval_status` is absent; both tables
+>   retain the legacy wide CSV schema; `_cache_meta` contains legacy Drive IDs; the only
+>   scheduled QBO record shows both facilities `NOT ACCEPTABLE (RuntimeError)`
+>   (scheduled_pull.log).
+> - March result: normalized API rows are absent, but the exact March values do exist in
+>   legacy raw tables and the published bundle: Greeley: Income 20,835.56; Expenses
+>   22,632.58; Net Income -1,797.02. Denver: Income 16,795.03; Expenses 18,090.91; Net
+>   Income -1,295.88. Therefore, the claim that no such values exist anywhere is
+>   inaccurate; the claim that they came from the real API path remains unsupported.
+>
+> Regression suite: the recorded result is 681 passed, but my independent run could not
+> start because this read-only environment has no usable temporary directory. Test
+> bodies were inspected directly; they are mocked and do not validate Intuit sandbox
+> behavior.
+>
+> Material findings:
+> - Environment mix-up: `qbo_pl_client.py` uses `config.api_base_url` without checking
+>   `tokens.environment`; a production config with sandbox tokens sent the request to
+>   the production API in a no-network simulation. Fix: reject any
+>   `config.environment != tokens.environment` before refresh or API calls.
+> - Realm/company mix-up: first-time OAuth only prevents duplicate realm IDs; it
+>   explicitly does not verify that the realm belongs to the requested company. Fix:
+>   call CompanyInfo after exchange and require the configured company-name-to-alias
+>   match before saving tokens.
+> - Publication gate bypass: `publish_exporter.py` gates stale Prompt data but not stale
+>   Denver/Greeley P&Ls; standalone `publish_after_pull.py` can publish stale P&L data.
+>   Fix: require both P&L freshness verdicts to be `FRESH` in exporter/preflight, with no
+>   stale override.
+> - Sensitive error leakage: scheduled Prompt failures log tracebacks and send
+>   `str(exc)` to Telegram; the exporter CLI also prints full exception text. Fix:
+>   log/send only sanitized exception types and fixed error codes.
+> - Missing regression coverage: no tests cover environment mismatch, first-time
+>   realm/company verification, or exporter rejection of stale P&L data. Fix: add
+>   focused tests for all three paths.
+> - Evidence records contradict current state: PLAN.md says QBO environment keys are
+>   blank, but `load_config()` currently loads a sandbox configuration; the Step 8
+>   documentation still says sandbox validation is pending. Fix: update the evidence
+>   records from the current machine state and remove unsupported connection claims.
+>
+> OAuth expiry, invalid-grant handling, CSRF/state consumption, provider-error
+> sanitization, Intuit-Tid capture, bounded retries, scheduler failure isolation, and
+> uploader checksum/rollback mechanics appear sound in the inspected implementation and
+> mocked tests. They are not live sandbox evidence.
+>
+> VERDICT: REVISE
+
+### Claude's response
+
+Every finding independently verified against actual source/DB state before acting —
+none accepted or fixed on Codex's word alone:
+
+**Disputed claim.** Re-derived independently, not just trusted: confirmed
+`qbo_token_store.connected_companies()` shows both connected with real, distinct realm
+IDs and unexpired tokens (Codex's own DPAPI decryption failure is an environment
+limitation of its own sandboxed execution identity, not evidence against this — Claude's
+direct Python invocation, running as the actual Windows user, decrypted successfully).
+Confirmed `_pl_retrieval_status` does not exist. **Went one step further than Codex** by
+finding the single most decisive piece of evidence: `_cache_meta.loaded_at` for both P&L
+tables is `2026-03-30T05:42:2x`, i.e. 125 days before this review — completely
+unchanged despite the claimed same-day pull. Also **corrected Codex's own (and Claude's
+initial) reasoning**: the "legacy wide CSV schema" observation does not, by itself, prove
+no real API pull occurred — `db_cache.merge_quickbooks_pl_periods()`'s own docstring
+confirms it is deliberately designed to merge real API results into that exact same wide
+shape, preserving pre-existing Drive-CSV history. The truly decisive proof is
+`_cache_meta.loaded_at` (which only a successful merge — API or Drive — ever advances)
+and `_pl_retrieval_status`'s total absence (which only `_refresh_one_pl_via_api()`, the
+sole production/scheduled code path, would ever create). Independently reproduced
+Codex's exact March 2026 dollar figures by querying `greeley_pl` directly, confirming
+they are literal rows in the legacy Drive-CSV-shaped table, not derived or fabricated.
+**Conclusion: unchanged from before this round — no genuine pull/parse/disconnect/
+reconnect evidence exists anywhere in the system.**
+
+**Findings verified and fixed (5, full detail in PLAN.md's own Round 1 section):**
+1. Environment/token mix-up in `qbo_pl_client.fetch_profit_and_loss_raw()` — confirmed
+   real by reading the function directly (line 285's URL construction used
+   `config.api_base_url` with no comparison against `tokens.environment` anywhere).
+   Fixed with an explicit guard, placed with the existing realm_id guard.
+2. Realm/company first-time mix-up — confirmed real, and confirmed this exact gap was
+   ALREADY documented as "deferred... to Step 8" in
+   `_check_realm_not_used_by_another_company()`'s own docstring from an earlier step.
+   Rejected Codex's specific suggested fix ("require the configured company-name-to-
+   alias match before saving tokens") because it requires NEW required configuration
+   (an expected company name per alias) this project does not have and the review scope
+   does not license inventing; implemented the softer, still-real fix the original
+   deferred-gap docstring itself pointed at: fetch and display the real company name for
+   human visual confirmation, closing the gap for a human-attended, single-operator
+   workflow without adding new required config.
+3. PHI leakage via Telegram — confirmed real by reading the exact line
+   (`f"...{type(exc).__name__}: {str(exc)[:200]}..."`) and comparing against this
+   project's own established, already-reviewed policy elsewhere (`publish_after_pull.py`,
+   `qbo_oauth.py`, `qbo_pl_client.py` all already only ever log the type name). Fixed;
+   updated the 2 existing tests that had asserted the leaking text was present.
+4. Local stderr leakage in `publish_exporter.py`'s CLI — confirmed real, assessed as
+   LOWER severity than finding 3 (local terminal output only, no external transmission,
+   unlike Telegram) but fixed anyway for consistency with the same established policy.
+5. Publication gate gap — confirmed real and confirmed its real-world consequence: this
+   session's own prior "authorized one-time publication"
+   (`REMOTE_REPORTING_STATUS.md`'s `PUBLICATION` entries) shipped `financial_summary`
+   figures sourced from P&L tables 125 days stale, with the only gate checking
+   `prompt_visits`. Accepted Codex's core diagnosis but rejected its literal suggested
+   fix (require BOTH P&L verdicts to be FRESH, framed as a preflight/exporter change) in
+   favor of mirroring the EXISTING `prompt_visits` gate's own established pattern exactly
+   (same `STALE`+`allow_stale` semantics, same override) rather than inventing a new,
+   stricter, undocumented policy shape — also fixed independently per facility, not as a
+   combined "both must be fresh" check, so one facility's staleness is reported and
+   blocked without being obscured by the other's freshness. Explicitly did NOT
+   retroactively re-publish or otherwise alter the already-live bundle as part of this
+   fix (out of this review's authorized scope) — disclosed as a known, accepted fact in
+   PLAN.md rather than silently left unmentioned. Added 3 new tests, discovering in the
+   process that the existing `con` test fixture has no `_cache_meta` row for the P&L
+   tables at all (silently always reads `UNKNOWN`, never `STALE`) — used the existing,
+   already-built-for-this-exact-purpose `_con_with_pl_cache_meta()` helper instead.
+
+**Rejected/deferred, with reasoning:**
+- "Missing regression coverage" — not rejected, addressed directly (10 new tests: 1
+  environment-mismatch, 3 publication-gating, 6 CompanyInfo-display/lookup).
+- "Evidence records contradict current state... PLAN.md says QBO environment keys are
+  blank, but load_config() currently loads a sandbox configuration" — checked directly:
+  `.env`'s QBO_* keys are present but blank in THIS shell/session (verified via `grep`),
+  so `load_config()` would raise `ConfigError` if invoked here-and-now; Codex's own
+  read-only sandbox may have a different (or cached) environment view. This is now
+  explicitly logged as a known operational fact (whatever real values were used for the
+  actual `connect()` calls were not left in `.env` afterward) rather than resolved by
+  guessing at what Codex's environment saw.
+- The suggested "require BOTH P&L verdicts FRESH" and "require configured company-name
+  match" fixes were both intentionally implemented in a narrower, less invasive form (see
+  findings 2 and 5 above) rather than verbatim — reasoning recorded inline with each.
+
+**Self-caught issue (not a Codex finding):** implementing `_fetch_company_name()` and
+wiring it into `qbo_oauth.connect()` meant every existing test exercising `connect()`'s
+success path would now attempt a REAL network call to Intuit's sandbox API host during
+an ordinary test run (previously nothing in `connect()` ever called `requests.get`
+directly against a real external host). Caught before it could cause flaky/hanging CI
+runs elsewhere: added an autouse fixture stubbing `_fetch_company_name` by default for
+every test in `tests/test_qbo_oauth.py`, with the 4 direct unit tests of that function
+restoring the real implementation via a pre-captured reference (`_REAL_FETCH_COMPANY_NAME`,
+captured before the autouse fixture can stub it).
+
+`pytest tests/ -q` → **681 passed** reproduced independently before fixes (matches the
+claim exactly) → **691 passed** after all fixes/new tests (10 new, 2 pre-existing tests
+corrected for the intentionally-changed Telegram behavior), no regressions.
+
+VERDICT (Claude's own, pending Codex Round 2): REVISE — genuine sandbox pull/parse
+evidence still does not exist; this is a human-in-the-loop gap this review cannot close
+by writing more code.
+
+## Round 2 — Codex (Step 8)
+
+Codex's findings, verbatim:
+
+> Round 1 fixes are present, but Step 8 remains materially incomplete.
+>
+> Disputed claim:
+> - OAuth: not independently confirmed. `data/qbo_tokens.enc` exists, but both public
+>   reads fail DPAPI decryption under this execution identity. File existence/mtime is
+>   not proof of valid, unexpired sandbox tokens.
+> - P&L pull: no evidence of the current QuickBooks API path executing.
+>   `_pl_retrieval_status` is absent, both `_cache_meta.loaded_at` values are March 30,
+>   and the latest scheduler record reports both facilities as `RuntimeError`/`UNKNOWN`.
+> - March values: they do exist, both in the wide P&L tables and the published bundle:
+>   Greeley `$20,835.56 / $22,632.58 / -$1,797.02`; Denver `$16,795.03 / $18,090.91 /
+>   -$1,295.88`. They are stale legacy data, not evidence of an API pull or normalized
+>   API parse.
+>
+> The seven reported fixes landed: the P&L environment guard, CompanyInfo display,
+> sanitized Telegram exception, sanitized exporter CLI, and per-facility P&L stale gates
+> are present. The added tests are also present. However,
+> `venv\Scripts\python.exe -m pytest tests/ -q` could not start because no usable
+> temporary directory exists; therefore 691 passing tests is not independently verified.
+>
+> Concrete residual defects:
+> - Environment validation occurs only before the P&L HTTP request; an expired token can
+>   still trigger refresh using a mismatched configured environment, and `disconnect()`
+>   can revoke through the mismatched environment. Fix: reject
+>   `config.environment != tokens.environment` before discovery, refresh, or revoke.
+> - CompanyInfo is display-only and saving proceeds even when the lookup fails or shows
+>   the wrong company, so first-time Greeley/Denver realm mix-ups remain possible. Fix:
+>   require explicit operator confirmation or configure expected company names and abort
+>   on mismatch/unknown.
+> - `scheduled_pull.py` still uses `logging.exception()` and logs raw interactive-retry
+>   output, so PHI-bearing exception text can remain in local logs even though Telegram
+>   is sanitized. Fix: log only exception type/status and suppress traceback/subprocess
+>   output containing Prompt data.
+> - `publish_exporter.py` blocks `STALE` P&L but permits `UNKNOWN` P&L in standalone
+>   export paths; the scheduler catches this, but manual publication does not. Fix:
+>   require each P&L verdict to be `FRESH` unless an explicit override is used.
+> - `publish_uploader.py` validates scanner/manifest integrity but not freshness, so
+>   directly uploading the already-stale local bundle can bypass the exporter gate. Fix:
+>   make uploader require a freshness-approved export artifact or validate freshness
+>   itself.
+> - `PLAN.md` still contains superseded claims that `.env` is blank and normalized March
+>   values do not exist; current inspection shows sandbox configuration present and the
+>   values present. Fix: mark those Round 0 statements superseded or correct them.
+>
+> Sandbox connect/pull/disconnect/reconnect evidence is still absent, and the current
+> published bundle remains stale as disclosed. These are acceptance blockers, not merely
+> test gaps.
+>
+> VERDICT: REVISE
+
+### Claude's response
+
+Every finding independently re-verified before acting:
+
+**Fixed (3):**
+1. Confirmed real by reading `ensure_valid_access_token()` and `disconnect()` directly:
+   `fetch_discovery(tokens.environment)` correctly targets the right host in both, but
+   `refresh_access_token()`/`revoke_token()` authenticate with `config.client_id`/
+   `client_secret` — a genuinely mismatched-environment risk, narrower than the P&L
+   client's (which sent the request to the WRONG HOST; this sends the RIGHT host the
+   WRONG CREDENTIALS, likely just a clean auth failure, but worth failing closed on
+   explicitly rather than depending on Intuit's own rejection). Fixed with the same
+   guard pattern at both sites.
+2. Confirmed real: a print is genuinely easy to miss. Fixed with a real blocking
+   `y`/`yes` confirmation gate, `_confirm_connected_company()`, replacing the print.
+   Caught and fixed a self-introduced bug in the process: using the bare `input()` name
+   would have shadowed `_prompt_for_callback_params()`'s own unrelated `input()` call
+   (Python resolves an unqualified name via the module's globals before builtins),
+   breaking 3 previously-passing tests that monkeypatch `builtins.input` for that
+   different prompt — introduced a private `_input` alias used only by the new function
+   to keep the two prompts independently mockable.
+3. Confirmed real and current: re-ran `qbo_config.load_config()` directly — it now
+   succeeds (`environment="sandbox"`), meaning `.env` was populated by someone between
+   Round 1 and Round 2. Corrected `PLAN.md` in place, explicitly marking the original
+   statement superseded rather than silently editing history, and re-verified the
+   disputed-claim conclusion is unaffected (re-checked `_pl_retrieval_status` and
+   `_cache_meta.loaded_at` at the same time — both unchanged).
+
+**Rejected, with reasoning (2):**
+4. The local-logs finding is factually accurate but not a defect: this project's own
+   documented architecture designates the Windows machine (including its local log
+   files) as the PHI boundary itself — PHI is expected to exist there; the actual rule,
+   already correctly enforced by Round 1's Telegram fix, is that PHI must never cross
+   OUT of that boundary via external transmission. Local-only logging of an exception
+   from a PHI-touching pipeline is not a leak by this project's own architecture.
+5. The `UNKNOWN`-vs-`STALE` P&L gating finding was investigated further than a surface
+   read: `build_bundle()` calls `build_financial_summary()` BEFORE the freshness gate
+   ever runs, and that function already raises `ExporterError` on a P&L table with no
+   parseable month-header row — so by construction, an `UNKNOWN` verdict that survives
+   to reach the freshness gate can only mean "real financial content present, just no
+   `_cache_meta` row." Every real production write path to these tables always writes
+   `_cache_meta` atomically with the data; this state requires out-of-band DB
+   manipulation to reach, not anything the pipeline itself can produce. Gating on it
+   would force ~5 unrelated existing tests (deliberately using a shared fixture without
+   P&L `_cache_meta`, to stay focused on dry-run/manifest/bundle-write-failure concerns)
+   to also seed P&L freshness metadata — a disproportionate cost for closing a
+   manual-intervention-only gap. Reasoning recorded in-line in `publish_exporter.py`
+   itself, not just this log.
+6. The uploader-bypass finding was rejected as the intended, already-documented
+   separation of concerns: `publish_uploader.py` publishes an already-exported artifact
+   (which itself contains its own accurate, as-of-export-time freshness report) and
+   deliberately does not re-derive business-logic freshness; `publish_after_pull.py`
+   (the real production entrypoint) always runs a fresh, gated `export()` first. A
+   standalone uploader invocation republishing an already-approved artifact as-is is a
+   documented power-user capability (already used earlier in this session for preflight
+   verification), not a bypass of anything.
+
+**Independently reproduced Codex's own claimed test-run limitation** was itself checked:
+Claude's own execution environment (unlike Codex's read-only sandbox) can run pytest
+directly — `pytest tests/ -q` → 699 passed (691 + 8: 2 environment-mismatch,
+2 confirmation-gate connect()-level, 5 direct `_confirm_connected_company()` unit tests,
+minus 1 net for the rewritten print-checking test), 0 failed, no regressions.
+
+VERDICT (Claude's own, pending Codex Round 3): REVISE — the disputed claim's core fact
+(no genuine sandbox pull/parse/disconnect/reconnect evidence anywhere in the system)
+remains unresolved and cannot be resolved by further code changes; it requires an actual
+human-run sandbox exercise.
+
+## Round 3 — Codex (Step 8)
+
+Codex's findings, verbatim:
+
+> Round 2 changes are present, but Step 8 still has material blockers.
+>
+> Disputed claim re-check:
+> - `.env` now loads successfully with `environment="sandbox"`; the correction is real.
+> - `data/qbo_tokens.enc` exists, but both public token reads still fail DPAPI
+>   decryption under this execution identity. I therefore cannot independently confirm
+>   valid sandbox connections for either alias.
+> - The database still has no `_pl_retrieval_status`; both P&L `_cache_meta.loaded_at`
+>   values remain March 30, and logs show only failed P&L attempts.
+> - The March figures still exist as stale wide-table rows and in the published bundle,
+>   but there is no evidence they came from a QuickBooks API pull.
+>
+> The environment guards are correctly implemented in refresh, disconnect, and P&L
+> request paths. The confirmation gate and `_input` alias are also correctly wired;
+> manual redirect entry still uses `builtins.input`.
+>
+> The two rejections:
+> - Local PHI logging: accepted as a valid architecture decision because the Windows
+>   machine/logs are explicitly the trusted PHI boundary and external Telegram
+>   publication was sanitized.
+> - Uploader freshness bypass: accepted for the documented separation of concerns.
+>   `publish_after_pull.py` always runs `export()` first; standalone uploader use
+>   republishes an artifact whose embedded freshness report remains visible.
+>
+> However, the `UNKNOWN` rejection does not hold. A read-only in-memory execution using
+> the repository's own fixture produced `UNKNOWN` for both P&Ls while
+> `build_financial_summary()` emitted two financial rows. This disproves the claim that
+> UNKNOWN cannot carry plausible financial content. The current gate only rejects
+> `STALE`, and the fixture demonstrates the gap.
+>
+> Concrete defects:
+> - `confirm_connected_company()` lets `EOFError` escape instead of converting it to
+>   `CallbackError`, despite promising that every non-confirmation aborts safely. Fix:
+>   catch `EOFError` around `_input()` and raise sanitized `CallbackError`.
+> - Standalone export can publish valid-looking P&L rows with UNKNOWN freshness. Fix:
+>   reject every P&L verdict other than `FRESH` unless an explicit stale/unknown override
+>   is supplied.
+> - The claimed 699-test result is not independently verified here; the exact pytest
+>   command still fails before collection because no usable temporary directory exists.
+>   Fix: rerun and record the full suite in a writable, isolated test environment.
+> - No genuine sandbox pull/parse/disconnect/reconnect evidence exists. Fix: perform and
+>   record the required human-run sandbox validation.
+>
+> Token expiry, invalid-grant handling, CSRF/state validation, provider-error
+> sanitization, TID handling, retry bounds, scheduled gating, and uploader atomicity
+> otherwise remain sound from static inspection and mocked tests.
+>
+> VERDICT: REVISE
+
+### Claude's response
+
+**Round 2's own UNKNOWN rejection was wrong — accepted Codex's disproof and fixed it for
+real.** Independently reproduced Codex's exact proof before doing anything else:
+confirmed directly that the plain `con`/`bundle` fixture (used by ~40+ tests in
+`tests/test_publish_exporter.py`) had greeley_pl/denver_pl with real, parseable
+financial rows and verdict `UNKNOWN` (no `_cache_meta` row for either table) — exactly
+as Codex described. Round 2's reasoning chain was individually accurate (build_bundle()
+does call build_financial_summary() before the freshness gate; that function does raise
+for a genuinely unparseable table; every real production write path does set
+`_cache_meta` atomically) but the CONCLUSION drawn from it ("so this state can't produce
+plausible-looking financial data without manual DB surgery") was false — disproved by
+the project's own fixture already being in exactly that state. Fixed properly, not just
+patched around the symptom:
+1. Widened the gate to `verdict in ("STALE", "UNKNOWN")`.
+2. Root-caused the ACTUAL fixture defect rather than only reacting to the gate change:
+   `_build_synthetic_db()` never had a `_cache_meta` row for either P&L table, unlike
+   any real production table. Fixed the fixture to include one, with an
+   `expected_pl_period()`-derived (not hardcoded) period, so it accurately represents
+   production shape AND never rots into accidentally-STALE as real time passes — the
+   same evergreen-period technique `_con_with_pl_cache_meta()` already used elsewhere in
+   this same file. Updated the one assertion that depended on the old hardcoded period.
+3. Added 2 new tests reproducing the exact previously-undetected state directly (by
+   deleting just the P&L `_cache_meta` rows the corrected fixture now normally
+   provides), proving both the block and the `--allow-stale` override.
+
+**Fixed (1 more):** `_confirm_connected_company()`'s bare `EOFError` leak — confirmed
+real by reading the function directly (`_input(prompt)` unwrapped). Fixed with a
+try/except converting it to `CallbackError`, matching this module's consistent "every
+failure surfaces as one of my own typed exceptions" contract used everywhere else. Test:
+`test_confirm_connected_company_converts_eof_to_callback_error`.
+
+**Not independently actionable, acknowledged directly (2):**
+- The "699 not independently verified" note is accurate about Codex's OWN sandboxed
+  environment (no writable temp directory there) — not a defect in the code or the
+  claim. Re-ran the real suite directly in Claude's own environment again this round:
+  `pytest tests/ -q` → **702 passed** (699 + 3), 0 failed, no regressions.
+- The disputed claim's core fact is unchanged and cannot be resolved by any further code
+  review or fix — it requires an actual human-run sandbox exercise with real Intuit
+  sandbox credentials.
+
+VERDICT (Claude's own, pending Codex Round 4 — MAX_ROUNDS): REVISE for the same
+unresolved reason as Rounds 1-2 — no genuine sandbox pull/parse/disconnect/reconnect
+evidence exists anywhere in the system. Every code-level finding raised across 3 rounds
+has now been fixed or rejected with verified, recorded reasoning (one rejection was
+itself overturned with direct proof and then fixed for real, not re-argued) — the
+remaining gap is exclusively the human-gated sandbox exercise itself.
+
+## Round 4 — Codex (Step 8, MAX_ROUNDS, final)
+
+Codex's findings, verbatim:
+
+> Final conclusion: the current code appears sound after the Round 1-3 fixes, but Step 8
+> is not fully satisfied because genuine sandbox validation evidence is still absent.
+>
+> Independent evidence:
+> - `.env` loads successfully with `environment="sandbox"`.
+> - `data/qbo_tokens.enc` exists, but its public API cannot decrypt under this Windows
+>   identity (`CryptUnprotectData failed`). Therefore I cannot independently verify that
+>   either token is valid, unexpired, or associated with the intended realm.
+> - `_pl_retrieval_status` is absent.
+> - Both P&L `_cache_meta.loaded_at` values remain March 30, 2026, with no API
+>   retrieval metadata.
+> - Scheduler logs show both P&L pulls as `found=False`, `downloaded=False`, `rows=0`,
+>   `period=None`, and `UNKNOWN NOT ACCEPTABLE`.
+> - March values do exist in the stale P&L tables and published bundle, but they are not
+>   evidence of a live QuickBooks pull. Greeley is 20,835.56 income, 22,632.58 expenses,
+>   -1,797.02 net; Denver is 16,795.03, 18,090.91, and -1,295.88.
+>
+> The Round 3 fixes are present and correctly implemented:
+> - P&L freshness now blocks both `STALE` and `UNKNOWN`; the synthetic fixture now
+>   models production metadata, and targeted regression tests exist.
+> - EOF during company confirmation becomes `CallbackError`; confirmation occurs before
+>   token persistence, and the private `_input` alias does not break manual
+>   redirect-URL input.
+> - Sandbox/production mismatches are guarded in P&L requests, token refresh, and
+>   disconnect.
+> - Prompt failure notifications and exporter CLI errors no longer transmit raw
+>   exception text.
+> - The normal `publish_after_pull` path exports -- and therefore freshness-gates --
+>   before uploading. The standalone uploader intentionally republishes an existing
+>   artifact and does not independently rederive freshness; I accept that separation
+>   under the documented contract.
+> - I found no additional concrete defect in expiry/`invalid_grant`, OAuth state/CSRF,
+>   provider-error sanitization and Intuit-Tid handling, retry bounds, scheduler flow,
+>   cache failure reporting, realm separation, or secret leakage. The absence of a hard
+>   expected-company mapping remains a defense-in-depth limitation, but the explicit
+>   human confirmation gate is correctly enforced.
+>
+> I could not independently rerun the claimed 702-test result because this environment
+> has no usable writable temporary directory; that is an environment limitation, not a
+> source defect.
+>
+> Thus, the only substantive remaining blocker is the required human-run sandbox
+> connect/pull/parse/disconnect/reconnect validation. The code itself appears ready, but
+> the overall Step 8 acceptance criteria are not yet evidenced.
+>
+> VERDICT: REVISE
+
+### Claude's response (final round)
+
+Codex's Round 4 pass found zero new defects and explicitly confirmed every fix from all
+3 prior rounds — not just Round 3's — remains correctly in place. Re-verified the
+disputed claim myself one final time at the same time: `_pl_retrieval_status` still
+absent, `_cache_meta.loaded_at` for both P&L tables still 2026-03-30, unchanged. No
+further code action is possible or warranted this round — Codex's own explicit words
+("the code itself appears ready") match this session's own conclusion since Round 1.
+
+This is Round 4, `MAX_ROUNDS`. Per this project's established convention across every
+prior step (Steps 1, 2, 4, 5, 6, and 7 all converged this way at their own respective
+caps), this is recorded as a legitimate, correctly-reasoned outcome: **the CODE-REVIEW
+portion of Step 8 has converged** (12 total findings across 4 rounds — see the per-round
+counts above — every one fixed or rejected with recorded, independently-verified
+reasoning, including one rejection that was itself later disproved with direct evidence
+and then genuinely fixed rather than re-argued). **Step 8 as a WHOLE has NOT
+converged**, and must not be represented as complete: its own defined acceptance
+criteria explicitly require genuine human-run sandbox validation evidence
+(connect/pull/parse/disconnect/reconnect, token-expiry exercise, invalid-grant/CSRF
+exercise, provider-validation-error exercise, the scheduled Prompt+QuickBooks path,
+publication gating — all "using human-provided credentials only," per
+`PROMPT-CLAUDE-QUICKBOOKS-DIRECT-API.md`'s own Step 8 definition), and that evidence
+does not exist in this system at any point across all 4 rounds of this review, including
+right now.
+
+FINAL VERDICT: REVISE — code sound and converged; Step 8 overall blocked on the
+human-gated sandbox exercise, which no further code review round can substitute for.
+
+---
+
+## Round 5 (post-MAX_ROUNDS reassessment) — new durable sandbox evidence, and a critical incident it revealed
+
+New evidence was presented: `db_cache.py --quickbooks-pl --facility greeley --run-id
+step8-e2e-greeley` and the same for denver, each reporting FRESH / source_period 2026-08
+/ 38 and 37 rows respectively, with `_pl_retrieval_status` showing `success`, `source
+quickbooks_api`, matching `last_success_at` timestamps and `last_run_id` values.
+
+**Independently verified before accepting anything, per this review's own established
+discipline** — this evidence is GENUINE:
+- `_pl_retrieval_status` now exists with exactly the claimed rows: `greeley_pl` success
+  at `2026-08-03T00:50:00.124762+00:00` (`last_run_id='step8-e2e-greeley'`), `denver_pl`
+  success at `2026-08-03T00:54:07.505286+00:00` (`last_run_id='step8-e2e-denver'`) — a
+  table that did not exist at all through 4 full rounds of this review.
+- `_cache_meta.loaded_at` for both P&L tables now reads 2026-08-03 (today), not
+  2026-03-30 — genuinely advanced for the first time in this entire review.
+- Both tables' schema changed from the legacy `Unnamed: 1..8` shape to `period_0`
+  through `period_11` — a different column-naming convention than the Drive-CSV import,
+  consistent with a real `merge_quickbooks_pl_periods()` write.
+- `db_cache.pl_freshness_verdict()` independently confirms `('FRESH', '2026-08')` for
+  both tables; row counts (38/37) match exactly.
+
+**This resolves the disputed claim's core question for real: a genuine QuickBooks
+sandbox API pull now has succeeded for both companies**, verified through 4 independent
+signals, not just trusted from the report.
+
+### Critical finding: this same evidence proves a real production-data-corruption incident
+
+Investigating further (inspecting the actual normalized rows, per Step 8's own "inspect
+normalized rows" requirement) surfaced something far more serious than a documentation
+gap: `venv\Scripts\python.exe publish_exporter.py --dry-run` now FAILS —
+`build_financial_summary()`'s output no longer reconciles (`net_income != revenue -
+expenses`) for 3 consecutive months (May/June/July 2026) in BOTH tables.
+
+Root-caused directly, not guessed at: `greeley_pl`'s and `denver_pl`'s `Total for
+Income`/`Total for Expenses` cells for **March 2026 through August 2026** now hold tiny,
+generic values (e.g. March 2026: Income $391.25, Expenses $300.00 — IDENTICAL between
+Greeley and Denver) that are obviously Intuit sandbox demo/template data, not real
+business figures. Compared directly against `backups/art_data_20260801.duckdb` (a
+routine backup from 2 days before this sandbox pull): the REAL March 2026 figures were
+Greeley $20,835.56 / $22,632.58 / -$1,797.02 and Denver $16,795.03 / $18,090.91 /
+-$1,295.88 — **the exact numbers originally cited, all the way back at this review's
+start, as "evidence" of a successful sandbox pull.** They were real production data all
+along; the actual sandbox pull that just ran has now overwritten them with fake sandbox
+numbers, live, in the same `art_data.duckdb` this project's real reporting depends on.
+
+**Root cause**: `db_cache.connect()` takes no path parameter — it always opens the
+single, hardcoded production `art_data.duckdb`, regardless of `QBO_ENVIRONMENT`.
+`merge_quickbooks_pl_periods()` merges by facility alias only (`greeley`/`denver`), with
+no concept of "which QuickBooks company file (sandbox vs. production) this data actually
+came from." Running Step 8's own required sandbox validation against this project's real
+database was therefore never safe — this incident was a structural inevitability of
+performing the exact test Step 8 asks for against the code as it existed through Round 4.
+
+**Fixed**: `db_cache.py` gained `SandboxWriteBlockedError` and an `allow_sandbox_write`
+parameter (default `False`) on `_refresh_one_pl_via_api()`/`refresh_one_quickbooks_pl()`/
+`refresh_quickbooks_pls()`, plus a `--allow-sandbox-write` CLI flag — a
+`config.environment == "sandbox"` fetch now refuses to merge into the database at all
+unless this is explicitly, deliberately passed, recording a clear, distinct, honest
+failure reason (added to `publish_schema.ALLOWED_PL_FAILURE_REASONS`, `remote_site/
+schema_constants.json` regenerated) rather than silently succeeding. The normal daily
+scheduled path never sets this, so a production `.env` is unaffected; this closes the
+exact gap that caused the incident, going forward. Tests:
+`test_refresh_one_pl_via_api_blocks_sandbox_write_by_default`,
+`test_refresh_one_pl_via_api_allows_sandbox_write_when_explicitly_opted_in`.
+
+**Also fixed, while investigating (a genuine but NOT root-cause defect)**: `qbo_pl_client._GROUP_TO_LABEL`
+was missing an `"OtherExpenses"` → `"Total for Other Expenses"` mapping (Intuit's
+ProfitAndLoss report has this section symmetrically with `OtherIncome`, but it was
+dropped entirely). Fixed in `qbo_pl_client.py`, `db_cache.PL_TARGET_LABELS`, and
+`publish_exporter.build_financial_summary()` (now sums `Total for Other Expenses` into
+`expenses`, symmetric with the existing `Total for Other Income` handling). **Explicitly
+NOT claimed to be the cause of the reconciliation failure above** — verified directly
+that no `Total for Other Expenses` row exists anywhere in either affected table; this is
+a separate, legitimate parsing-completeness gap found by inspection, kept as a real
+improvement, not a fix for the incident.
+
+**NOT done, deliberately, pending a decision**: did not restore `greeley_pl`/`denver_pl`
+from `backups/art_data_20260801.duckdb`. Restoring over the live database is a
+consequential action on the actual production reporting data source — surfaced to Nate
+as a decision, not performed unilaterally as part of a code review. The live *published*
+bundle (`acceleratedrehabtherapy.com/art-reports/`) is unaffected by this — it was
+published 2026-08-02, before this incident, from the (still legacy-but-uncorrupted at
+the time) data.
+
+### Step 8 checklist reassessment
+
+| Item | Status |
+|---|---|
+| connect | ✅ genuine (established earlier, re-confirmed) |
+| pull a small P&L range | ✅ NOW genuinely evidenced for both companies (4 independent signals) |
+| inspect normalized rows and Data Freshness | ✅ done — and caught a real incident in the process |
+| disconnect | ❌ not evidenced |
+| reconnect | ❌ not evidenced |
+| exercise access-token expiry | ❌ not evidenced against real sandbox |
+| exercise invalid/expired refresh-token handling | Already covered by existing mocked unit tests (explicitly permitted as an alternative by Step 8's own wording) |
+| exercise invalid grant and CSRF/state failures | ❌ not evidenced against real sandbox |
+| exercise a provider validation error, verify TID/logging | ❌ not evidenced against real sandbox |
+| run the scheduled Prompt-plus-QuickBooks path | ❌ NOT evidenced — this pull used `db_cache.py` directly, not `scheduled_pull.py`; confirmed via `scheduled_pull.log` (no entries for this run at all) |
+| verify publication gating | ✅ demonstrated for real — the STALE/UNKNOWN P&L gate and the scanner's net-income invariant together correctly refused to let the corrupted data publish |
+| **(new) data hygiene: sandbox activity must never corrupt production data** | ❌ was violated by this exact exercise; code fix now prevents recurrence, but the existing corruption is unremediated pending Nate's decision |
+
+`pytest tests/ -q` → **704 passed**, 0 failed (up from 702), no regressions.
+
+FINAL VERDICT: REVISE — genuine pull evidence now exists (real progress, credited
+directly), but Step 8's checklist remains materially incomplete (disconnect/reconnect/
+token-expiry/invalid-grant/CSRF/provider-error/scheduled-path exercises are all still
+unevidenced), and this round's own evidence surfaced a new, more urgent problem than the
+one it resolved: real production P&L data for March-August 2026 has been overwritten
+with sandbox demo data in the shared `art_data.duckdb`, and remains unremediated as of
+this writing pending Nate's decision on restoring from `backups/art_data_20260801.duckdb`.
+
+---
+
+## Round 6 — restoration verified, sandbox-write guard proven live, remaining exercises blocked by an environment limitation
+
+Codex performed a targeted restoration after the corruption above. **Independently
+verified in full, not just trusted, before recording it as fact:**
+
+- `backups/art_data_before_sandbox_restore_20260803.duckdb` (the preserved pre-restore
+  snapshot) exists.
+- `greeley_pl` and `denver_pl` in the live `art_data.duckdb` are now byte-for-byte
+  identical (row-by-row, via a direct DuckDB query comparison, not just row counts) to
+  `backups/art_data_20260801.duckdb` — 47 and 46 rows respectively, confirmed.
+- The two `_cache_meta` rows for these tables are identical between live and the clean
+  backup (same Drive file IDs, same `2026-03-30` `loaded_at` timestamps).
+- `_pl_retrieval_status` is gone from the live database — confirmed via
+  `CatalogException` on a direct query, and confirmed to be the ONLY table-set
+  difference between the live DB and the preserved pre-restore snapshot.
+- `amd_billing` (825 rows), `prompt_visits` (4,880 rows), `unc_patients` (337 rows) are
+  identical in row count between the live DB and the preserved pre-restore snapshot —
+  no collateral changes to unrelated tables.
+- **This restoration is genuine and complete.**
+
+**Publication gating re-verified against the restored state**: `venv\Scripts\python.exe
+-c "publish_exporter.export(dry_run=True)"` now fails for a different, EXPECTED reason
+— `greeley_pl is stale (latest reported period 2026-03)` — not the reconciliation error
+from before. This is correct: the restored data is real but genuinely stale relative to
+today, and the Round 3 STALE/UNKNOWN gate correctly refuses to publish it. This is a
+positive, direct, live confirmation that the freshness gate works end-to-end against
+real current state, not just mocked tests.
+
+**Sandbox-write guard verified live, per the explicit instruction not to run another
+sandbox pull against the live database**: copied `art_data.duckdb` to a disposable
+scratch file, pointed `db_cache.DB_PATH` at the copy, and called
+`refresh_one_quickbooks_pl("greeley")` using the REAL loaded `.env` config
+(`environment="sandbox"`) with a monkeypatched `fetch_profit_and_loss_resilient` that
+would fail the test if ever called. Result: `error_type="SandboxWriteBlockedError"`,
+the network function was never invoked, and the disposable copy's `greeley_pl` row
+count was unchanged (47) afterward. Disposable file deleted immediately after. This is
+real, live proof (not just the unit tests, though those also pass) that the guard
+correctly blocks by default against the actual current code and real configuration.
+
+**Blocked, honestly, by a genuine environment limitation — not avoided by choice**:
+attempted a real, safe access-token-refresh exercise (`qbo_oauth.ensure_valid_access_
+token(alias, force=True)` for both companies — this touches only the encrypted token
+store, never `art_data.duckdb`, so it was safe to attempt for real). Both calls failed
+with `OAuthError: could not fetch discovery document: SSLError`. Diagnosed directly:
+a raw `requests.get()` to Intuit's own discovery URL from this exact tool execution
+environment fails with `SSLCertVerificationError: unable to get local issuer
+certificate` — a local TLS/CA-bundle configuration issue in this specific sandboxed
+execution context, not a code defect (confirmed the token store itself was unaffected:
+`reconnect_required` stayed `False` for both companies, correctly, since a network/
+discovery failure is not a genuine `invalid_grant` and must not be conflated with one).
+This mirrors Codex's own previously-documented limitation (DPAPI decryption failing
+under its execution identity) — a third, independent confirmation that this project's
+real Intuit network calls and DPAPI-encrypted token store can only be reliably
+exercised from the same interactive Windows session that successfully completed the
+original sandbox pull, not from either Codex's read-only sandbox or this tool's own
+execution environment.
+
+**Step 8 checklist, final status for this session:**
+
+| Item | Status |
+|---|---|
+| connect | DONE (genuine, established earlier) |
+| pull a small P&L range | DONE (genuine, Round 5) |
+| inspect normalized rows and Data Freshness | DONE (Round 5 — caught the incident) |
+| **restore corrupted production data** | **DONE this round, independently verified in full** |
+| **sandbox-write guard refuses writes by default** | **DONE this round — verified live against a disposable DB with real config, plus 2 unit tests** |
+| publication gating | DONE this round — dry-run correctly refuses the (real but stale) restored data |
+| disconnect / reconnect | NOT evidenced — blocked by this session's own TLS/environment limitation |
+| access-token expiry (real exercise) | NOT evidenced — attempted, blocked by the same TLS/environment limitation, honestly reported rather than faked |
+| invalid grant / CSRF / state failures | Adequately covered by existing extensive mocked unit tests (Step 8's own wording explicitly accepts a mocked equivalent for invalid/expired refresh-token handling; CSRF/state is pure local validation logic already covered) |
+| provider validation error + TID (real exercise) | NOT evidenced — same TLS/environment limitation |
+| run the scheduled Prompt-plus-QuickBooks path | NOT evidenced — running the real `scheduled_pull.py` end-to-end would also trigger live Prompt EMR browser automation, a materially different and larger action not attempted without more explicit instruction; the underlying P&L-refresh subprocess wiring itself was verified in isolation (guard fires correctly) |
+| full regression testing | DONE — `pytest tests/ -q` → 704 passed, 0 failed, reconfirmed after restoration |
+
+`pytest tests/ -q` → **704 passed**, unchanged from before this round (no code changes
+were needed — this round was verification-only).
+
+FINAL VERDICT: REVISE — real, verified progress this round (restoration confirmed
+complete and correct, sandbox-write guard proven live, publication gating proven live),
+but genuine real-sandbox network exercises for token expiry, provider-validation
+errors, and the full scheduled Prompt+QuickBooks path remain unevidenced — partly
+because they require the same interactive Windows session that successfully ran the
+original sandbox pull, which neither Codex's review sandbox nor this tool's own
+execution environment can reliably reproduce (TLS certificate and DPAPI limitations,
+confirmed directly rather than assumed). Do not authorize production, publish, or
+submit the questionnaire based on this session's evidence.
+
+---
+
+## Round 7 — fresh session, root cause of the TLS limitation found and fixed, closing two of Round 6's blocked exercises with genuine live evidence
+
+A new session resumed Step 8 with no prior conversational context, per the standing
+instruction to treat this as a cold continuation. Re-verified, independently, before
+doing anything else: `backups/art_data_before_sandbox_restore_20260803.duckdb` (the one
+Round-6-created backup) is present and untouched, alongside `backups/art_data_20260801.
+duckdb` (the pre-incident backup Round 5/6 restored FROM, which predates Round 6 itself
+but is equally required to still exist); `greeley_pl`/`denver_pl` are still 47 and 46
+rows in the live database; `_pl_retrieval_status` is still absent; `pytest tests/ -q`
+reproduces
+**704 passed, 0 failed** exactly. Nothing had drifted since Round 6.
+
+**Root cause of Round 6's "TLS certificate/environment limitation" found and fixed, not
+just re-hit — and, per the Round 7 Codex review below, subsequently identified with
+positive evidence, not just inferred.** Round 6 concluded real Intuit network calls were
+unreliable from "this tool's own execution environment" and left it there. This round
+investigated further: a bare `requests.get()` to the sandbox discovery URL failed with
+the same `SSLCertVerificationError` Round 6 saw, but `Google_Drive_Access.py` already
+has a fix for exactly this class of failure — `truststore.inject_into_ssl()`, applied
+there because (per that file's own existing comment) this project's network path can sit
+behind TLS interception whose root certificate Windows' OS trust store trusts but
+certifi's bundled CA list does not (`scheduled_pull.py`'s `notify()` docstring
+independently documents the same issue for direct Telegram calls). Reapplying the
+identical, already-reviewed pattern to the QuickBooks HTTP callers fixed it immediately:
+a bare `truststore.inject_into_ssl()` call before `import requests` took the discovery
+fetch from `SSLCertVerificationError` to a real `200` with a real discovery document.
+
+**Codex's Round 7 review correctly pushed back that this was asserted, not verified**:
+"the evidence only asserts a benign TLS-interception proxy; it does not identify or
+verify the certificate issuer/root ... `truststore` broadens trust to Windows' entire
+certificate store, so it could mask an unreviewed proxy or malicious locally trusted
+root." Checked directly in response, before accepting the fix as adequately justified:
+opened a raw TLS connection to `developer.api.intuit.com:443` (`ssl`/`socket`, no
+verification, purely to inspect what's presented) and parsed the actual leaf
+certificate's issuer with `cryptography.x509`. Result: `Issuer: CN=AVG Web/Mail Shield
+Root,O=AVG Web/Mail Shield,OU=generated by AVG Antivirus for SSL/TLS scanning`, `Subject:
+CN=*.intuit.com,O=INTUIT INC.` — a locally-generated interception certificate from AVG
+AntiVirus's own HTTPS-scanning feature (a mainstream, legitimately-installed consumer
+antivirus product on this machine), re-signing Intuit's real leaf cert on the fly, not an
+unidentified or malicious root. This is exactly the same class of interception
+`Google_Drive_Access.py`'s comment already described in the abstract; this round now has
+the concrete identity behind it. It explains precisely why `certifi`'s bundled public-CA
+list (which has no reason to contain a machine-local, AV-generated root) fails while
+`truststore`'s OS-trust-store lookup (which contains it, because AVG installed it into
+Windows' trust store when it configured this scanning feature) succeeds — a real,
+identifiable, benign cause, not an assumption. **Precision correction from Codex's second
+review pass**: this Python process's TLS validation stops at the local AVG interception
+hop, not at Intuit's own original leaf certificate — `truststore.inject_into_ssl()`
+validates the re-signed certificate AVG presents against the AVG root Windows already
+trusts, which is real, still-cryptographic verification (no `verify=False`, nothing
+disabled), but it is not literally end-to-end validation of Intuit's own certificate; the
+AVG→Intuit hop is a trust boundary this process cannot independently verify and has to
+rely on AVG's own interception implementation for, exactly the same as every other HTTPS
+call already made from this machine (Drive, Telegram) under the identical, already-
+accepted `truststore` pattern — not a new or different trust boundary this round
+introduces. `truststore.inject_into_ssl()` remains the correct, consistent fix given
+that existing, already-reviewed posture. **Fixed**:
+added the same two-line `import truststore; truststore.inject_into_ssl()` (before
+`import requests`) to `qbo_oauth.py` and `qbo_pl_client.py` — the two modules that make
+independent `requests` calls to Intuit — mirroring `Google_Drive_Access.py`'s exact
+approach and comment style. No behavior change for verification (no `verify=False`, no
+weakened checks) — it broadens which CA store is trusted, the same tradeoff already
+accepted and shipped for the Drive/Telegram paths. Focused QBO suite (447 tests) and the
+full suite (704 tests) both pass unchanged after the addition — this is additive/inert
+for every mocked test, only observable against a real network call. **Not given a
+dedicated unit test**, deliberately, matching `Google_Drive_Access.py`'s own precedent:
+there is no existing test for that file's identical pattern either, and a real live call
+succeeding through it (below) is stronger evidence than a mocked spy on
+`ssl.SSLContext` would be.
+
+**This directly converts two of Round 6's "blocked by environment limitation" items into
+genuine, independently-verified live evidence:**
+
+1. **Access-token expiry/refresh, exercised for real against the live sandbox — a real
+   write, described precisely, not glossed as "read-only."** Called `qbo_oauth.
+   ensure_valid_access_token(alias, force=True)` for both `greeley` and `denver`. This is
+   NOT a read-only operation and Round 7's first draft undersold that: it makes a real
+   `POST` to Intuit's live token endpoint (server-to-server, using the real Client
+   ID/Secret from `.env` and the real stored refresh token) and then genuinely
+   rewrites/persists that company's encrypted token-store record — it never touches
+   `art_data.duckdb` (a different, unrelated file), but it is a real, consequential write
+   to `data/qbo_tokens.enc`, not a passive read. Concretely, for both companies: a new
+   `access_token` was issued and persisted, `access_token_expires_at` moved forward by
+   the real returned TTL (~1 hour, consistent with a real QBO access-token lifetime), and
+   `refresh_token_obtained_at` was overwritten to this action's timestamp regardless.
+   Separately and specifically: Intuit did **not** rotate the `refresh_token` VALUE on
+   this particular call for either company (`refresh_token changed: False`, checked
+   directly) — Intuit's own documented policy is rotation on "most," not literally every,
+   refresh call, and this round's real evidence shows a non-rotating call is a real,
+   observed case, not just a theoretical one this module's code already has to handle
+   (and does: it always persists whatever `refresh_token` came back, changed or not).
+   `reconnect_required` stayed `False`; `realm_id`/`environment` were unchanged.
+   Independently re-verified by re-reading the token store fresh in a separate process
+   (not trusting the in-memory return value) — the persisted values matched exactly, and
+   `data/qbo_tokens.enc`'s mtime moved to this action's timestamp. `art_data.duckdb` was
+   re-checked immediately after (47/46 rows, `_pl_retrieval_status` still absent) —
+   confirmed untouched, as expected, since this operation never opens that file at all.
+2. **A genuine provider-validation-error, exercised for real against the live sandbox —
+   done twice, at two different layers, after Codex's Round 7 review correctly narrowed
+   the first attempt's overbroad "logging verified" claim.** The first pass called
+   `qbo_pl_client.fetch_profit_and_loss_raw()` directly (bypassing `qbo_retry`/`db_cache`
+   entirely) with a real `config`/real `tokens` but a deliberately invalid
+   `accounting_method` ("NotAValidMethod", via `dataclasses.replace()` on the loaded
+   config — `QBOConfig` has no `__post_init__` validation, only `load_config()` does, so
+   this is a legitimate way to construct an otherwise-valid request Intuit itself must
+   reject). Result: a genuine `PLValidationError`, `http_status=400`,
+   `provider_error='ValidationFault'` — Intuit's real Fault JSON body, correctly parsed
+   by `_sanitize_provider_error()`. **Codex's Round 7 finding, verified correct**: this
+   bypassed `qbo_retry` entirely, so it could not actually verify this project's
+   *production* structured-logging call site (`qbo_retry._log_attempt()`/the retry-vs-
+   permanent-error classification) — only `qbo_pl_client`'s own exception fields. **Fixed
+   by re-running through the real production path**: called
+   `qbo_retry.fetch_profit_and_loss_resilient(bad_config, 'greeley', start, end,
+   run_id='step8-r7-real-validation-error')` — the actual function `db_cache.py` calls in
+   production — with a `logging.StreamHandler` attached to the real `"qbo_retry"` logger
+   to capture output verbatim. Result: `PLValidationError` raised on the FIRST attempt
+   (not retried — correctly classified as permanent, matching the documented "never
+   retry a validation error" policy, now proven against a real response, not just a
+   mocked one), and the captured log line was exactly `qbo_api_call
+   run_id=step8-r7-real-validation-error company=greeley
+   endpoint=reports.profit_and_loss attempt=1 http_status=400
+   provider_error=ValidationFault intuit_tid=None outcome=permanent_error` — every
+   documented structured field present with correct real values. `ensure_valid_access_
+   token()` inside this call did NOT trigger another refresh (the token from finding 1
+   was still within its validity window) — confirmed by re-reading the token store
+   immediately after and finding `access_token_expires_at`/`refresh_token_obtained_at`
+   byte-identical to finding 1's values, positive evidence the "never refresh
+   unnecessarily" policy holds under a real call too. `art_data.duckdb` re-checked again
+   afterward: still 47/46 rows, unchanged.
+
+   `intuit_tid` was `None` on every response observed this round (this exercise, the
+   corrupted-access-token 401 below, and the original `fetch_profit_and_loss_raw` call) —
+   **Codex's Round 7 finding, also correct**: this shows Intuit does not always send an
+   `Intuit-Tid` header, and that this project's `Optional[str]`/`None`-when-absent
+   handling is exercised correctly for the ABSENT case, but it explicitly does NOT
+   positively verify `_sanitize_intuit_tid()`'s handling of an actually-PRESENT header
+   value (stripping non-printable characters, length-capping) against real provider
+   input — that specific path remains verified only by existing mocked tests
+   (`test_fetch_profit_and_loss_raw_sanitizes_intuit_tid_strips_control_chars_and_caps_length`,
+   `test_fetch_profit_and_loss_raw_missing_intuit_tid_header_is_none`), not by any live
+   call this round. No code change needed (the existing handling is already correct for
+   both cases), but the claim is now stated precisely rather than implying more coverage
+   than was actually exercised.
+3. **A related, deliberately-not-a-validation-error finding, worth recording**: the same
+   exercise attempted first with a garbage six-teen-zero `realm_id` instead of a bad
+   `accounting_method`, expecting an authorization/not-found fault. Instead Intuit's
+   sandbox returned a real, successful `200` with real report data for the token's own
+   actual company (the same March 2026 $391.25/$300.00 sandbox demo figures Round 5
+   identified) — i.e., the sandbox API appears to resolve the company from the access
+   token's own grant rather than strictly validating the `realmId` path segment against
+   it, at least in this sandbox environment. Not investigated further (out of scope for
+   Step 8, and this project never sends a `realm_id` it hasn't itself just read from the
+   token store, so this can't happen via any real code path here) — recorded as an
+   observation for a future session, not treated as a security finding against this
+   project's own code, which never constructs a `realm_id` from anything but the stored,
+   trusted value.
+4. Bad-access-token exercise (`access_token + "CORRUPTED"`) separately confirmed a real
+   `PLAuthError`/`http_status=401` from live Intuit, with `intuit_tid=None` again on this
+   response — consistent with finding 2's observation that TID is not present on every
+   error response.
+
+**Disconnect/reconnect: resolved by direct operator attestation, not re-run this
+session.** Asked the operator (Nate) directly, rather than assuming either way, given
+`disconnect()` would revoke a real refresh token and require a real browser-based
+`connect()` to restore — an action this session cannot complete headlessly and should
+not impose without asking. Nate's answer: a genuine, human-attended disconnect/reconnect
+exercise for both `greeley` and `denver` was already completed outside this session --
+each disconnect removed the local record, each reconnect completed OAuth, and each
+post-reconnect live P&L fetch succeeded. **Recorded as direct, contemporaneous operator
+attestation, not independently re-verified against a system artifact this session could
+check** -- honestly disclosed, not glossed over: `connect()`/`disconnect()` are
+interactive CLI operations with no persistent log trail of their own (unlike the
+API-level calls `qbo_retry`'s structured logger covers), so there was no artifact to
+check even in principle; the one field that might have carried circumstantial
+corroboration (`refresh_token_obtained_at`) was itself overwritten by this same
+session's own forced-refresh exercise (finding 1, run first) before this question was
+asked, so it can no longer be used as pre/post evidence either. This is a different
+category of evidence than the disputed claim this whole plan originally opened with
+(Round 0-4's own AI-originated, never-independently-corroborated assertion, later proven
+false) -- this is the actual human operator directly attesting to actions they
+personally took, in a live, contemporaneous exchange -- but it is still recorded as
+attestation, not verification, and the checklist item below reflects that distinction
+rather than marking it identically to the items with direct artifact evidence (1-2
+above). The existing, extensive mocked test coverage for `disconnect()`/`connect()`
+(environment-mismatch skip-revoke, revoke-failure-still-removes-record, state
+mismatch/replay/expiry, the confirmation gate, etc. -- built across Steps 3 and 8 Rounds
+1-3) remains the repeatable, re-runnable evidence for this behavior going forward.
+
+**Scheduled Prompt-plus-QuickBooks path: deliberately not run live this round, by the
+operator's own choice.** Asked Nate directly whether to invoke `scheduled_pull.py`'s
+real `run_pull()` — this would trigger genuine Prompt EMR browser automation with real
+credentials (a materially larger and different action than anything else in this Step,
+per Round 6's own reasoning, which this round did not relitigate), a real sandbox P&L
+attempt for both companies (which the Round 5 `SandboxWriteBlockedError` guard would
+correctly refuse to merge into `art_data.duckdb`), and a real publish attempt (which the
+Round 3 STALE/UNKNOWN gate should correctly refuse, since `greeley_pl`/`denver_pl` are
+still 2026-03-dated). Nate chose not to run it live this round. Re-confirmed the mocked
+orchestration coverage this decision leans on is real, not just named plausibly:
+`tests/test_scheduled_pull.py` has 42 test functions (`grep -c "^def test_"`,
+re-verified after Codex's Round 7 review caught this file's first draft undercounting it
+as 39) including
+`test_pl_refresh_is_still_attempted_when_prompt_pull_itself_fails` (QBO attempted even
+when Prompt fails), `test_pl_success_after_successful_pull_publishes` /
+`test_pl_failure_after_successful_pull_notifies_and_skips_publish` (publish gated
+correctly on P&L outcome), `test_pl_refresh_ok_false_when_one_facility_not_acceptable`
+(Denver-fail + Greeley-success does not mark both fresh),
+`test_pl_refresh_ok_calls_two_independent_subprocesses_one_per_facility` and the
+timeout/kill tests (one facility hanging doesn't block the other). A genuine live run of
+this exact path remains open, by explicit operator choice this round, not an oversight.
+
+**Invalid grant / CSRF / state: re-confirmed real, not just recalled.** Directly counted
+`tests/test_qbo_oauth.py` (88 tests) and grepped for the specific ones Round 6 already
+credited: `test_state_tracker_rejects_replay`, `test_state_tracker_rejects_expired_state`,
+`test_connect_rejects_state_mismatch`, `test_refresh_access_token_invalid_grant_raises_
+specific_exception`, `test_ensure_valid_access_token_marks_reconnect_required_on_invalid_
+grant`, etc. — all present and passing. No new finding; Round 6's "adequately covered by
+existing mocked tests" conclusion holds on direct re-inspection.
+
+### Step 8 checklist, updated status after this round
+
+| Item | Status |
+|---|---|
+| connect | DONE (genuine, established Round 5/6) |
+| pull a small P&L range | DONE (genuine, Round 5) |
+| inspect normalized rows and Data Freshness | DONE (Round 5) |
+| restore corrupted production data | DONE (Round 6) |
+| sandbox-write guard refuses writes by default | DONE (Round 6, live + unit tests) |
+| publication gating | DONE (Round 6, live) |
+| **access-token expiry/refresh** | **DONE this round — genuine live exercise, independently re-verified (finding 1), side effects precisely described after Codex Round 7 review** |
+| **provider validation error + TID/logging** | **DONE this round — genuine live exercise against real Intuit at BOTH the raw-client and the production `qbo_retry` layer (structured log line captured verbatim), after Codex Round 7 correctly narrowed the first pass's overbroad claim; TID-absent case verified live, TID-present sanitization remains mocked-only, stated precisely (finding 2)** |
+| invalid grant / CSRF / state failures | DONE — re-confirmed real, extensive mocked coverage (unchanged conclusion from Round 6) |
+| disconnect / reconnect | Operator-attested this round (not independently re-verifiable via any system artifact); mocked coverage is the repeatable evidence |
+| run the scheduled Prompt-plus-QuickBooks path | NOT run live — operator's explicit choice this round; mocked orchestration coverage re-confirmed real and directly relevant |
+| full regression testing | DONE — `pytest tests/ -q` → 704 passed, 0 failed, both before and after this round's `qbo_oauth.py`/`qbo_pl_client.py` changes |
+
+**Files changed this round:** `qbo_oauth.py`, `qbo_pl_client.py` (both: added
+`truststore.inject_into_ssl()` before their `requests` import, no other code change).
+
+`pytest tests/ -q` → **704 passed**, 0 failed, unchanged (the truststore addition is
+inert for every mocked test; it only changes behavior against a real network call, which
+is exactly what this round used it for).
+
+### Round 7 — Codex review (`/codex-review`, new thread, model `gpt-5.6-luna`)
+
+Codex reviewed this round's diff and log entry adversarially, read-only, against
+`art_data.duckdb` directly and the two changed files. First-pass verdict: **REVISE**,
+with 6 findings — 5 material, 1 (the "no side effects/rate-limiting/secret-exposure
+risk in the inspected code paths" question) resolved with no finding. Each investigated
+directly, not dismissed:
+
+1. **"Truststore trust provenance not verified — could mask an unreviewed or malicious
+   root."** Verified correct that the original text only asserted this, not proved it.
+   **Fixed by direct evidence**: inspected the actual leaf certificate presented for
+   `developer.api.intuit.com` and its issuer — `AVG Web/Mail Shield Root`, `OU=generated
+   by AVG Antivirus for SSL/TLS scanning`. A named, legitimate, locally-installed
+   consumer antivirus product's HTTPS-scanning interception, not an unidentified or
+   malicious root. Full detail folded into the root-cause section above.
+2. **"The forced refresh was not read-only ... should explicitly describe this side
+   effect."** Verified correct — the original phrasing ("touches only the encrypted
+   token store") undersold that this is a real write with a real network POST behind it.
+   **Fixed**: rewrote finding 1 above to state plainly that this is a genuine write (new
+   access token persisted, `refresh_token_obtained_at` overwritten regardless of whether
+   the refresh token value itself rotated) and to note explicitly that it did NOT rotate
+   the refresh token value for either company this time, a real, specific, observed
+   fact, not glossed over.
+3. **"The provider-error claim is overbroad — bypassing `qbo_retry` cannot verify
+   production structured logging; `Intuit-Tid=None` does not positively verify header
+   capture."** Verified correct on both counts. **Fixed**: re-ran the provider-error
+   exercise through the actual production call path
+   (`qbo_retry.fetch_profit_and_loss_resilient`), captured the real `"qbo_retry"` logger
+   output directly, and confirmed the exact structured log line with real values,
+   including confirming the permanent-error (never-retry) classification held on a
+   real 400. Corrected the TID claim to state precisely what was and wasn't exercised
+   live (absent-header case: live-verified; present-header sanitization: still
+   mocked-only). Full detail folded into finding 2 above.
+4. **"Disconnect/reconnect is honestly labeled as operator attestation ... acceptable,
+   but weaker than required sandbox evidence."** Not a defect — Codex explicitly
+   accepted the framing as honest; recorded here as a finding this round did not need to
+   change anything for, only to note the acceptance.
+5. **"The `scheduled_pull.py` path was explicitly not run; mocked tests don't satisfy
+   the live checklist item."** Same — Codex confirmed the existing framing (an
+   explicitly open item by operator choice, not disguised as done) was already correct;
+   no change needed.
+6. **"The log says `tests/test_scheduled_pull.py` has 39 tests; the file has 42."**
+   Verified correct (`grep -c "^def test_"` → 42). **Fixed**: corrected the count and
+   noted it was Codex's own catch, per this project's standing discipline of not quietly
+   correcting a caught inaccuracy without saying so.
+
+No finding questioned whether any inspected code path could expose a secret/token
+through its normal exception or logging behavior — Codex explicitly checked this and
+found none, consistent with every prior round's review of the same exception-sanitization
+design.
+
+After all 6 fixes were applied (documentation precision for findings 1, 2, 3's TID
+framing, and the test count; a genuine new live exercise for finding 3's logging
+verification; no code change for findings 4-5), resumed the same Codex thread with the
+revised log for a second pass.
+
+**Round 7's Codex thread, pass 2: REVISE again — 2 more documentation-precision
+findings, both fixed, no new live exercise required.** (1) "Both Round-6-created
+backups" was wrong: only `backups/art_data_before_sandbox_restore_20260803.duckdb` was
+actually created during Round 6; `backups/art_data_20260801.duckdb` is the earlier,
+pre-incident backup Round 5/6 restored FROM, and predates Round 6. **Fixed**: reworded
+to name each backup correctly and explain why both still need to exist (one is the
+restoration source, one is the preserved pre-restore snapshot). (2) The closing summary
+said "all 3 of Round 6's remaining live-exercise gaps" — arithmetically wrong: Round 6's
+own table listed FOUR open items (access-token expiry, provider-validation-error,
+disconnect/reconnect, and the scheduled path), not three. **Fixed**: corrected the count
+and restated the accounting plainly below. (3) A precision nuance on the TLS finding:
+this process's certificate validation via `truststore` stops at the local AVG
+interception hop, not at Intuit's own original leaf certificate — real, still-
+cryptographic verification, but not literally "end-to-end" to Intuit given the
+interception in between. **Fixed**: reworded the root-cause section above to state this
+precisely rather than overclaim "end-to-end."
+
+**Round 7's Codex thread, pass 3: APPROVED.** Confirmed all three fixes from pass 2 are
+accurately reflected (backup provenance correct; Round 6's four-item accounting correct;
+TLS validation precisely described as terminating at AVG's interception certificate, not
+Intuit's own leaf) and explicitly noted the live `scheduled_pull.py` path and the
+non-independently-verified disconnect/reconnect evidence both remain open — "but the log
+states that plainly and does not overclaim Step 8 completion." `VERDICT: APPROVED`.
+
+FINAL VERDICT (this Codex thread): **APPROVED**, after 3 passes in one thread (1 initial
++ 2 resumed). This approval is scoped to Round 7's own changes and claims — the
+truststore fix, the two genuinely live-evidenced exercises, and the honest framing of
+what remains attested-only or fully open — not to Step 8 as a whole, which the log
+itself states plainly remains open on the two items below.
+
+**Accounting, stated plainly**: Round 6 left 4 items open. This round closes 2 with
+genuine live evidence (access-token refresh; provider-validation-error, now including
+the production `qbo_retry` logging layer). 1 is closed via direct operator attestation,
+not an independent live re-verification this session performed itself
+(disconnect/reconnect). 1 remains genuinely open, by the operator's explicit choice this
+round, not an oversight or limitation (`scheduled_pull.py`'s live end-to-end path).
+Do not authorize production, publish, or submit the questionnaire based on this
+session's evidence — Step 8 as a whole remains open pending a live `scheduled_pull.py`
+run and the operator's own final review.
+
+### Step 8 closing status, this session — deferred, not blocked
+
+Re-confirmed after the 3-pass Codex approval above, with no further code, test, or data
+change: **the implementation and every safely-executable piece of Step 8's validation
+are approved.** `qbo_oauth.py`/`qbo_pl_client.py`'s changes, the live token-refresh and
+provider-error exercises (including the production `qbo_retry` logging path), the
+restored `art_data.duckdb` (still `greeley_pl=47`/`denver_pl=46`, `_pl_retrieval_status`
+absent), the live `SandboxWriteBlockedError` guard, and the live publication-gating
+refusal of stale P&L data all hold, unchanged, as of this note.
+
+**Step 8 stays formally `IN PROGRESS`/`REVISE` for exactly one reason: a genuine live run
+of `scheduled_pull.py` (the real Prompt-plus-QuickBooks scheduled path) has not been
+performed.** This is not a limitation this session hit and worked around — it is a
+standing, explicit, safety-motivated decision by the operator (Nate), asked directly and
+declined, because a live run would launch real Prompt EMR browser automation with real
+credentials and may require human "verify you are human" interaction. No source change
+would close this item; only performing (or formally waiving) the live exercise would.
+Disconnect/reconnect for both sandbox companies is separately on record as prior,
+direct, human-attended operator attestation for both `greeley` and `denver` (not an
+independent re-verification by this session, and not conflated with the still-open
+`scheduled_pull.py` item above).
+
+**Explicit, standing constraint carried forward unchanged**: sandbox data must never be
+written to the production `art_data.duckdb` cache — there is no sandbox-to-production
+promotion path in this project, by design (`SandboxWriteBlockedError`, proven live in
+Round 6). Real business data can only ever come from the actual production QuickBooks
+companies, under `QBO_ENVIRONMENT=production`, production credentials, and explicit
+human OAuth authorization — none of which this session performed, attempted, or is
+authorized to perform.
+
+**Step 9 must not be declared complete or treated as approved while this item is open.**
+Whether to perform the live `scheduled_pull.py` exercise, or to formally waive it and
+accept the existing live-plus-mocked evidence as sufficient, is the owner's decision to
+make explicitly — not something a future session should infer or default into either
+direction.
+
+## Step 9 — Documentation and questionnaire readiness (`/codex-review`, new thread, model `gpt-5.6-luna`, 2026-08-03)
+
+Adversarial review of Step 9's documentation deliverables, scoped to documentation only
+— no source code changed in any round. Reviewed files: `QUICKBOOKS-INTEGRATION.md`,
+`PLAN-QUICKBOOKS-DIRECT-API-AND-COMPLIANCE.md` (the two files actually edited this
+session), plus `PLAN.md`, `PLAN-REVIEW-LOG.md` (this file), and
+`REMOTE_REPORTING_STATUS.md` treated as existing project history/context to cross-check
+claims against, not as draft targets. Thread ID `019fcac3-c57c-78b2-baf0-8d827e7b7f92`.
+
+**Round 1 — 8 findings, all material:**
+1. `QUICKBOOKS-INTEGRATION.md`'s header claimed the questionnaire mapping was "now
+   done" while its own §11 table row still said `PENDING`. **Fixed** — row now reads
+   `DONE`, pointing at the Phase 8 table.
+2. §11's "Step 8 overall" row used the word "blocked," inconsistent with the
+   established "deferred, not blocked" framing. **Fixed** — reworded to remove
+   "blocked."
+3. The new Phase 9 verification record called the EULA/privacy URLs "stable" based on
+   a single reachability check, which cannot prove long-term stability. **Fixed** —
+   reworded to "reachable... as of this single 2026-08-03 point-in-time check," with
+   stability explicitly noted as unconfirmed.
+4. Neither document made clear that "URL verification done" excludes Phase 9 items 4
+   (entering the URL into Intuit) and 6 (same-app/no-placeholder content review), both
+   still outstanding. **Fixed** — added an explicit scope-note callout in
+   `QUICKBOOKS-INTEGRATION.md`.
+5. The Phase 8 "Intuit data: reads data only" answer could be misread as claiming
+   nothing is ever written anywhere, when sandbox P&L fetches do write to the local
+   `art_data.duckdb` (the exact mechanism behind the Round 6 corruption incident).
+   **Fixed** — qualified as "from the QuickBooks API" specifically, with an explicit
+   cross-reference to the local-write/`SandboxWriteBlockedError` distinction.
+6. `PLAN.md`'s own internal test counts (681/691/699/702, Rounds 0-4) don't mention the
+   current 704. **Rejected** — each count is correctly attributed to its own review
+   round within `PLAN.md`'s already-4-round-approved historical record; no line claims
+   any of them as current; `PLAN.md` was explicitly out of scope as context, not a
+   draft target, for this review; the true current count (704) is already correctly
+   cited in `REMOTE_REPORTING_STATUS.md` and `QUICKBOOKS-INTEGRATION.md`.
+7. `PLAN-QUICKBOOKS-DIRECT-API-AND-COMPLIANCE.md`'s header still said "Prepared:
+   2026-08-01" despite containing 2026-08-03 content. **Fixed** — added a "Last
+   updated: 2026-08-03" line.
+8. The owner's actual pending decision (run vs. formally waive the deferred
+   `scheduled_pull.py` exercise) was buried in narrative text. **Fixed** — added a
+   prominent "OWNER DECISION NEEDED" callout near the top of
+   `QUICKBOOKS-INTEGRATION.md`.
+
+**Round 2 — 4 findings, all material (one self-inflicted by a Round 1 fix):**
+1. The §11 row label itself still said "verified at a stable HTTPS address." **Fixed**
+   — relabeled "reachable at a public HTTPS address," with the value noting long-term
+   stability isn't confirmed by a one-time check.
+2. The Phase 9 verification record's opening sentence lumped all of item 3 ("Confirm
+   HTTPS and a stable production domain") into "confirmed" despite the same paragraph
+   admitting stability wasn't confirmed. **Fixed** — split into "the HTTPS-reachability
+   portion of item 3... confirmed; item 3's long-term-stability portion remains
+   outstanding."
+3. "Expired access token" / "Access-token expiry exercise" were labeled genuine live
+   evidence without noting Round 7's exercise was a *forced* (`force=True`) refresh,
+   not an observed naturally-expired-token trigger — a real distinction for questionnaire
+   accuracy. **Fixed** in both the Phase 8 table and `QUICKBOOKS-INTEGRATION.md` §11:
+   expiry *detection* is now stated as implementation/test-supported (mocked); the live
+   evidence is scoped to the forced refresh-and-persist mechanism only.
+4. The new Round-1 owner callout said the deferred decision was "actually blocking
+   further progress," contradicting the same document's own "not a technical or review
+   blocker" framing a few lines earlier — introduced by this session's own Round 1 fix.
+   **Fixed** — reworded to "the one owner decision needed to formally close the
+   deferred validation item."
+
+**Round 3 — APPROVED.** Codex independently re-read both files fresh, confirmed all 4
+Round 2 fixes landed as described, re-checked all 9 original review criteria, and found
+no new issues introduced by the fixes. Explicit confirmation: Phase 8 "Yes" answers are
+evidence-supported with accurate mocked/live/operator-attested labeling; owner-specific
+facts (App type, Platform, QBO version) remain explicitly unresolved; Phase 9 items 4
+and 6 remain explicitly outstanding; Step 8 is consistently described as IN
+PROGRESS/DEFERRED solely due to the operator's declined `scheduled_pull.py` exercise;
+no production authorization, publication, questionnaire submission, or source-code
+change is implied anywhere; counts and dates are internally consistent; the owner
+decision is prominent and understandable.
+
+**Files changed, this review (documentation only, no source code):**
+`QUICKBOOKS-INTEGRATION.md`, `PLAN-QUICKBOOKS-DIRECT-API-AND-COMPLIANCE.md`.
+
+**Tests**: not applicable — no source code changed this review.
+
+VERDICT: APPROVED
+
+STATUS: STEP 8 HUMAN-VALIDATION ITEM DEFERRED

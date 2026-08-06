@@ -497,15 +497,23 @@ def build_financial_summary(con: duckdb.DuckDBPyConnection) -> list[dict]:
 
     revenue  = "Total for Income" + "Total for Other Income" (defaults to 0
                if the Other-Income row is absent that month)
-    expenses = "Total for Expenses"
+    expenses = "Total for Expenses" + "Total for Other Expenses" (defaults
+               to 0 if the Other-Expenses row is absent that month)
     net_income = "Net Income" (QuickBooks' own bottom line)
 
     Verified against the current export (2026-07-28) that this reconciles
     net_income == revenue - expenses for every month in both tables — e.g.
-    Greeley Sept 2025: 24897.86 + 0.00 - 23827.37 = 1070.49 = Net Income row.
-    If a future export doesn't reconcile, publish_schema's
+    Greeley Sept 2025: 24897.86 + 0.00 - 23827.37 - 0.00 = 1070.49 = Net
+    Income row. If a future export doesn't reconcile, publish_schema's
     _inv_net_income_balances invariant will catch it and the scanner will
-    fail the bundle closed rather than publish an inconsistent number.
+    fail the bundle closed rather than publish an inconsistent number --
+    which is exactly what caught this function's own missing "Total for
+    Other Expenses" term (Step 8 review finding): a real sandbox pull for
+    both Greeley and Denver included non-zero Other Expenses for several
+    2026 months, which this function previously omitted entirely, making
+    its own derived `revenue - expenses` disagree with QuickBooks' own
+    authoritative Net Income. No mocked unit test fixture ever included an
+    Other Expenses row, so this was invisible until real API data existed.
 
     Both tables carry no patient data of any kind — this is pure QuickBooks
     category/amount data, safe to parse directly (unlike prompt_visits/
@@ -535,6 +543,7 @@ def build_financial_summary(con: duckdb.DuckDBPyConnection) -> list[dict]:
         income_row = _row_by_label("Total for Income")
         other_income_row = _row_by_label("Total for Other Income")
         expenses_row = _row_by_label("Total for Expenses")
+        other_expenses_row = _row_by_label("Total for Other Expenses")
         net_income_row = _row_by_label("Net Income")
 
         if income_row is None or expenses_row is None or net_income_row is None:
@@ -553,7 +562,9 @@ def build_financial_summary(con: duckdb.DuckDBPyConnection) -> list[dict]:
             revenue = (_parse_pl_amount(income_row[col], f"{facility_table} {period} Total for Income")
                        + (_parse_pl_amount(other_income_row[col], f"{facility_table} {period} Total for Other Income")
                           if other_income_row is not None else 0.0))
-            expenses = _parse_pl_amount(expenses_row[col], f"{facility_table} {period} Total for Expenses")
+            expenses = (_parse_pl_amount(expenses_row[col], f"{facility_table} {period} Total for Expenses")
+                        + (_parse_pl_amount(other_expenses_row[col], f"{facility_table} {period} Total for Other Expenses")
+                           if other_expenses_row is not None else 0.0))
             net_income = _parse_pl_amount(net_income_row[col], f"{facility_table} {period} Net Income")
             out.append({
                 "schema_version": schema.SCHEMA_VERSION,
@@ -569,6 +580,50 @@ def build_financial_summary(con: duckdb.DuckDBPyConnection) -> list[dict]:
 
 _FRESHNESS_STALE_DAYS = {"prompt_visits": PROMPT_STALE_DAYS, "amd_billing": 35}
 
+# Step 7 (Data Freshness observability): company_alias is derivable from
+# table_name alone for the 2 P&L tables; "" (not-applicable) for the other
+# 3, which have no per-company retrieval concept.
+_PL_COMPANY_ALIAS_BY_TABLE = {"greeley_pl": "greeley", "denver_pl": "denver"}
+
+
+def _sanitize_pl_failure_reason(raw_outcome):
+    """Maps _pl_retrieval_status's last_attempt_outcome to the bundle's
+    closed pl_failure_reason_enum. "" means the last attempt succeeded (or
+    there is no retrieval-attempt concept for this table at all) --
+    "success" itself is never published, since it isn't a failure reason.
+    Anything not in the fixed allowlist collapses to "OtherError" rather
+    than ever blocking the scanner/a publish over an unenumerated future
+    exception type (mirrors qbo_oauth._sanitize_error_code()'s identical
+    "unrecognized -> fixed placeholder" policy)."""
+    if raw_outcome is None or raw_outcome == "success":
+        return ""
+    if raw_outcome in schema.ALLOWED_PL_FAILURE_REASONS:
+        return raw_outcome
+    return "OtherError"
+
+
+def _pl_retrieval_fields(con, table_name):
+    """Returns (company_alias, source, last_attempt_at, last_success_at,
+    failure_reason) for the freshness row -- "" not-applicable defaults for
+    the 3 non-P&L tables, real (possibly still-empty/never-attempted)
+    values from db_cache.pl_retrieval_status() for greeley_pl/denver_pl.
+    Looked up BEFORE the missing/unknown/normal branch split below, since a
+    P&L table can have recorded failed retrieval attempts (_pl_retrieval_status
+    is a separate table from _cache_meta/the P&L table itself) even when the
+    P&L table doesn't exist yet or has no _cache_meta row at all -- exactly
+    the "not-configured" case Step 7 must still surface a reason for."""
+    company_alias = _PL_COMPANY_ALIAS_BY_TABLE.get(table_name, "")
+    if not company_alias:
+        return "", "", "", "", ""
+    status = db_cache.pl_retrieval_status(table_name, con=con)
+    return (
+        company_alias,
+        status["source"] or "",
+        status["last_attempt_at"] or "",
+        status["last_success_at"] or "",
+        _sanitize_pl_failure_reason(status["last_attempt_outcome"]),
+    )
+
 
 def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
     """One row per table this project caches, using loaded_at/row-count from
@@ -577,7 +632,9 @@ def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
     no date range, no min/max DOS — only a categorical verdict, an age in
     days, a row count, and (for greeley_pl/denver_pl only) the latest
     reporting-period label actually found in the file's own content, per
-    the Phase 1 contract's freshness schema.
+    the Phase 1 contract's freshness schema -- plus (Step 7) company_alias/
+    source/last_attempt_at/last_success_at/failure_reason, "" not-applicable
+    for the 3 non-P&L tables.
 
     greeley_pl/denver_pl are deliberately NOT judged by age_days like
     prompt_visits/amd_billing: reloading the identical, still-March file
@@ -585,7 +642,12 @@ def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
     fresh by an age-based rule. db_cache.pl_freshness_verdict() instead
     checks what reporting month is actually present in the file against the
     last-closed-calendar-month policy (db_cache.expected_pl_period),
-    independent of when it was last touched locally."""
+    independent of when it was last touched locally. last_success_at is
+    equally independent of verdict (Step 7's explicit review requirement:
+    a superficial success must never improve the displayed status) --
+    it is written by db_cache._refresh_one_pl_via_api() only when a fetch
+    genuinely succeeded, regardless of whether the retrieved data
+    satisfies the freshness policy."""
     tables_present = {r[0] for r in con.execute(
         "SELECT table_name FROM information_schema.tables"
     ).fetchall()}
@@ -599,6 +661,15 @@ def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
     now = datetime.now(timezone.utc)
     out = []
     for table_name in sorted(schema.ALLOWED_TABLE_NAMES):
+        company_alias, source, last_attempt_at, last_success_at, failure_reason = (
+            _pl_retrieval_fields(con, table_name)
+        )
+        pl_fields = {
+            "company_alias": company_alias, "source": source,
+            "last_attempt_at": last_attempt_at, "last_success_at": last_success_at,
+            "failure_reason": failure_reason,
+        }
+
         if table_name not in tables_present:
             out.append({
                 "schema_version": schema.SCHEMA_VERSION,
@@ -608,6 +679,7 @@ def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
                 "age_days": 0.0,
                 "verdict": "MISSING",
                 "source_period": "",
+                **pl_fields,
             })
             continue
 
@@ -622,6 +694,7 @@ def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
                 "age_days": 0.0,
                 "verdict": "UNKNOWN",
                 "source_period": "",
+                **pl_fields,
             })
             continue
 
@@ -649,6 +722,7 @@ def build_freshness(con: duckdb.DuckDBPyConnection) -> list[dict]:
             "age_days": round(age_days, 2),
             "verdict": verdict,
             "source_period": source_period,
+            **pl_fields,
         })
     return out
 
@@ -755,6 +829,40 @@ def export(db_path: str = DB_PATH, output_dir: str = OUTPUT_DIR,
                 f"--allow-stale to override."
             )
 
+        # Step 8 review finding: financial_summary is built directly from
+        # greeley_pl/denver_pl's own content (build_financial_summary()) --
+        # a STALE/UNKNOWN P&L verdict was computed and exposed in the
+        # freshness report for display, but nothing ever stopped export()
+        # from publishing financial_summary's dollar figures from that same
+        # table anyway, unlike prompt_visits above. Same gate, same
+        # override, applied per facility so one fresh company doesn't mask
+        # the other being stale/unknown.
+        #
+        # UNKNOWN is gated too (Step 8 Round 2 finding, revised after
+        # Round 3 disproved Round 2's own initial rejection): Round 2
+        # reasoned that build_financial_summary() already raises
+        # ExporterError for a P&L table with NO parseable period at all, so
+        # UNKNOWN surviving to this point could only mean "real content,
+        # just no _cache_meta row" -- true, but that description does not
+        # imply safety. A table can have perfectly real, parseable,
+        # PLAUSIBLE-LOOKING financial rows (verified directly: this
+        # project's own `con`/`bundle` test fixture did exactly this,
+        # before being corrected) while still being of UNKNOWN actual
+        # freshness -- exactly the "silently looks current" risk this gate
+        # exists to close, no different in kind from STALE.
+        for pl_table in db_cache.PL_TABLES:
+            pl_freshness = next(
+                (r for r in bundle["freshness"] if r["table_name"] == pl_table), None
+            )
+            if pl_freshness and pl_freshness["verdict"] in ("STALE", "UNKNOWN") and not allow_stale:
+                raise ExporterError(
+                    f"{pl_table} is {pl_freshness['verdict'].lower()} (latest reported "
+                    f"period {pl_freshness['source_period'] or 'unknown'}) — refusing to "
+                    f"publish current-looking financial_summary figures from "
+                    f"stale/unverifiable P&L data. Refresh via the QuickBooks direct "
+                    f"API, or pass --allow-stale to override."
+                )
+
         scan = scanner.scan_bundle(bundle)
         if not scan.ok:
             raise ExporterError(
@@ -833,7 +941,14 @@ def main():
     try:
         summary = export(db_path=args.db, dry_run=args.dry_run, allow_stale=args.allow_stale)
     except ExporterError as exc:
-        print(f"EXPORT FAILED: {exc}", file=sys.stderr)
+        # Step 8 review finding: ExporterError's message can carry a
+        # scanner Violation's repr()'d failing value (see this module's
+        # scan_bundle() usage and publish_after_pull.py's own docstring on
+        # this exact risk) -- printed here to a LOCAL terminal only, lower
+        # severity than an external transmission, but tightened for
+        # consistency with the established "type name only" policy used
+        # everywhere else in this project's publish pipeline.
+        print(f"EXPORT FAILED: {type(exc).__name__}", file=sys.stderr)
         sys.exit(1)
 
     print("Export summary (no raw values, counts and paths only):")

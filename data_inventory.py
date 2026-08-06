@@ -114,13 +114,26 @@ def inspect(con) -> list[dict]:
 
         def _verdict(n, lo, hi, age):
             fresh_verdict, period = db_cache.pl_freshness_verdict(con, table)
+            # Step 7 (Data Freshness observability): last attempt/success/
+            # reconnect-or-failure reason, read via the SAME already-open
+            # read-only connection (pl_retrieval_status() reuses it rather
+            # than opening a second read-write connection to the same
+            # file, which DuckDB would reject).
+            status = db_cache.pl_retrieval_status(table, con=con)
+            detail = (
+                f" [last attempt {status['last_attempt_at'] or 'never'}, "
+                f"last success {status['last_success_at'] or 'never'}"
+                + (f", reason: {status['last_attempt_outcome']}"
+                   if status["last_attempt_outcome"] not in (None, "success") else "")
+                + "]"
+            )
             if fresh_verdict == "FRESH":
-                return f"FRESH (source period {period}, policy requires {expected_str}+)"
+                return f"FRESH (source period {period}, policy requires {expected_str}+){detail}"
             if fresh_verdict == "STALE":
                 return (f"STALE (source period {period or 'unknown'}, policy requires "
-                         f"{expected_str}+) — export a fresh QuickBooks P&L")
+                         f"{expected_str}+) — export a fresh QuickBooks P&L{detail}")
             return (f"UNKNOWN — could not detect a reporting-period header in {table} "
-                     "(RAW/UNPARSED format, header junk, unnamed columns)")
+                     f"(RAW/UNPARSED format, header junk, unnamed columns){detail}")
         return _verdict
 
     def unc_verdict(n, lo, hi, age):
