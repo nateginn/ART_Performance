@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 MONTH_NUMBERS = {
     "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
@@ -103,7 +103,14 @@ def _credential_login(page):
     print("Waiting for login to complete (up to 5 minutes).")
     print("If a browser window is open and shows 'Verify you are human',")
     print("click it and then click LOG IN.")
-    page.wait_for_url(f"{BASE_URL}/**", timeout=300_000)
+    try:
+        page.wait_for_url(f"{BASE_URL}/**", timeout=300_000)
+    except PlaywrightTimeoutError:
+        _screenshot(page, "login_timeout")
+        raise RuntimeError(
+            f"Login stalled at {page.url.split('?')[0]} for 5 minutes — Prompt likely "
+            "showed a human-verification or MFA step that needs a manual click"
+        )
     page.wait_for_timeout(5_000)
 
     if not _is_authenticated(page):
