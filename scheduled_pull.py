@@ -12,6 +12,15 @@ there to make. If that retry also fails or times out, Nate gets a Telegram
 push and nothing is published for the day, rather than a stale/partial
 bundle going out or the task hanging indefinitely.
 
+That visible retry is now attempted only when an interactive Windows
+desktop actually exists (_interactive_session_available()). The task runs
+whether or not Nate is logged on (LogonType Password, see install_task()),
+and on a logged-out machine a headed browser would open on a window
+station nobody can see or click - it would simply burn the full
+INTERACTIVE_RETRY_TIMEOUT_SECONDS and then be killed. When no interactive
+session is available the Prompt pull fails closed immediately and the
+Telegram push asks for a manual session refresh instead.
+
 The QuickBooks P&L refresh (both Greeley and Denver, via the direct
 QuickBooks Online API) is attempted every run regardless of whether the
 Prompt pull above succeeded - it's an independent data source with its own
@@ -23,6 +32,8 @@ Register the task with:  python scheduled_pull.py --install
 """
 
 import argparse
+import ctypes
+import ctypes.wintypes
 import json
 import logging
 import msvcrt
@@ -43,10 +54,36 @@ PYTHONW = PROJECT_DIR / "venv" / "Scripts" / "pythonw.exe"
 TASK_NAME = "ARTPromptPull"
 DAILY_TIME = "08:00"
 
+# "Password" = Task Scheduler's TASK_LOGON_PASSWORD: run as growy whether or
+# not growy is logged on, using a password stored in Task Scheduler's own
+# credential vault. Deliberately NOT the two alternatives:
+#   - SYSTEM would change identity, and two hard dependencies are scoped to
+#     growy's own profile/SID: Playwright's browser binaries live in
+#     %LOCALAPPDATA%\ms-playwright, and qbo_tokens.enc is DPAPI-encrypted
+#     with CryptProtectData at USER scope (qbo_token_store.py's _protect()
+#     passes flags=0, not CRYPTPROTECT_LOCAL_MACHINE), so SYSTEM could not
+#     decrypt the QuickBooks tokens at all.
+#   - S4U ("do not store password") keeps the growy identity but produces a
+#     token with no credential material behind it, which cannot unlock the
+#     user's DPAPI master key -- CryptUnprotectData on qbo_tokens.enc fails,
+#     silently breaking the QuickBooks P&L half of every run.
+# Password is the only logon type that both keeps the growy profile intact
+# and runs with growy logged out.
+TASK_LOGON_TYPE = "Password"
+
 HERMES_PYTHON = Path("d:/AI/Hermes/.venv/Scripts/python.exe")
 NOTIFY_TIMEOUT_SECONDS = 60
 
-MANUAL_COMMAND = r"venv\Scripts\python prompt_report_downloader.py --all-time --load"
+# Fully absolute and shell-agnostic on purpose (Codex review, point 8): this
+# string is what Nate is told to paste after RDPing in, and an RDP shell
+# starts in his home directory, not the project directory - a relative
+# "venv\Scripts\python ..." simply fails there. prompt_report_downloader.py
+# resolves its own paths from __file__, so the working directory is
+# irrelevant to the command itself.
+MANUAL_COMMAND = (
+    rf"{PROJECT_DIR}\venv\Scripts\python.exe "
+    rf"{PROJECT_DIR}\prompt_report_downloader.py --all-time --load"
+)
 
 # The interactive retry's own login step already waits up to 5 minutes for a
 # human to click "Verify you are human" (see prompt_report_downloader.py's
@@ -210,6 +247,147 @@ def row_count():
         return con.execute("SELECT COUNT(*) FROM prompt_visits").fetchone()[0]
     finally:
         con.close()
+
+
+_WTS_CURRENT_SERVER_HANDLE = 0
+_WTS_CONNECT_STATE_CLASS = 14  # WTSConnectState
+_WTS_CONNECTSTATE_ACTIVE = 0  # WTSActive
+_UOI_NAME = 2
+
+
+def _current_session_id():
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.ProcessIdToSessionId.argtypes = [
+        ctypes.wintypes.DWORD, ctypes.POINTER(ctypes.wintypes.DWORD),
+    ]
+    kernel32.ProcessIdToSessionId.restype = ctypes.wintypes.BOOL
+    session_id = ctypes.wintypes.DWORD()
+    if not kernel32.ProcessIdToSessionId(kernel32.GetCurrentProcessId(), ctypes.byref(session_id)):
+        raise OSError(f"ProcessIdToSessionId failed (error {ctypes.get_last_error()})")
+    return session_id.value
+
+
+def _process_window_station_name():
+    """The window station this process is attached to. An interactive
+    process gets "WinSta0" (the one and only station that owns the physical
+    display, keyboard and mouse); a task launched under a batch/service
+    logon gets a private, non-visible station named like
+    "Service-0x0-3e7$". Restypes are set explicitly because HWINSTA is a
+    pointer -- ctypes' default c_int restype truncates handles on 64-bit
+    and would make a valid station look like a failure (or worse, pass a
+    corrupted handle to the next call)."""
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetProcessWindowStation.argtypes = []
+    user32.GetProcessWindowStation.restype = ctypes.wintypes.HANDLE
+    user32.GetUserObjectInformationW.argtypes = [
+        ctypes.wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+        ctypes.wintypes.DWORD, ctypes.POINTER(ctypes.wintypes.DWORD),
+    ]
+    user32.GetUserObjectInformationW.restype = ctypes.wintypes.BOOL
+
+    station = user32.GetProcessWindowStation()
+    if not station:
+        raise OSError(f"GetProcessWindowStation failed (error {ctypes.get_last_error()})")
+    needed = ctypes.wintypes.DWORD(0)
+    user32.GetUserObjectInformationW(station, _UOI_NAME, None, 0, ctypes.byref(needed))
+    buffer = ctypes.create_unicode_buffer(max(needed.value, 128) // 2 + 1)
+    if not user32.GetUserObjectInformationW(
+        station, _UOI_NAME, ctypes.byref(buffer), ctypes.sizeof(buffer), ctypes.byref(needed)
+    ):
+        raise OSError(f"GetUserObjectInformationW failed (error {ctypes.get_last_error()})")
+    return buffer.value
+
+
+def _session_connect_state(session_id):
+    """WTSConnectState for a session. WTSActive means a user is genuinely
+    attached to it right now; a disconnected RDP session (WTSDisconnected)
+    still owns a perfectly real WinSta0 desktop that nobody is looking at,
+    which is exactly the case a window-station check alone would miss."""
+    wtsapi32 = ctypes.WinDLL("wtsapi32", use_last_error=True)
+    wtsapi32.WTSQuerySessionInformationW.argtypes = [
+        ctypes.wintypes.HANDLE, ctypes.wintypes.DWORD, ctypes.c_int,
+        ctypes.POINTER(ctypes.POINTER(ctypes.wintypes.DWORD)),
+        ctypes.POINTER(ctypes.wintypes.DWORD),
+    ]
+    wtsapi32.WTSQuerySessionInformationW.restype = ctypes.wintypes.BOOL
+    wtsapi32.WTSFreeMemory.argtypes = [ctypes.c_void_p]
+    wtsapi32.WTSFreeMemory.restype = None
+
+    value = ctypes.POINTER(ctypes.wintypes.DWORD)()
+    returned = ctypes.wintypes.DWORD(0)
+    if not wtsapi32.WTSQuerySessionInformationW(
+        ctypes.wintypes.HANDLE(_WTS_CURRENT_SERVER_HANDLE), session_id,
+        _WTS_CONNECT_STATE_CLASS, ctypes.byref(value), ctypes.byref(returned),
+    ):
+        raise OSError(f"WTSQuerySessionInformationW failed (error {ctypes.get_last_error()})")
+    try:
+        if not value or returned.value < ctypes.sizeof(ctypes.wintypes.DWORD):
+            raise OSError("WTSQuerySessionInformationW returned an unexpected buffer")
+        return value.contents.value
+    finally:
+        wtsapi32.WTSFreeMemory(value)
+
+
+def _interactive_session_available():
+    """
+    True only if THIS process has a usable interactive launch context -- a
+    real, currently-attached desktop a Chromium window would be placed on.
+    Deliberately NOT a claim that a human is looking at the screen right now
+    (Codex review, point 3): a locked-but-connected session passes, and
+    nothing here can know whether anyone is actually present. Gates
+    _run_interactive_retry(), which opens a real Chromium window and waits up
+    to 5 minutes for someone to click "Verify you are human" -- worthwhile
+    when Nate is at the PC, pure dead time when he isn't.
+
+    Three conditions, all required, because each one alone has a blind
+    spot:
+      1. Not Windows session 0. Session 0 is reserved for services and
+         non-interactive logons and has no user attached to it, ever.
+      2. Window station is WinSta0. A task started under LogonType Password
+         while nobody is logged on runs on a private "Service-0x0-...$"
+         station whose desktop is never rendered.
+      3. The session's WTSConnectState is WTSActive. Catches the case a
+         station check misses: a disconnected RDP session still has a real
+         WinSta0 desktop that no one is watching.
+    A locked-but-active console session deliberately still counts -- the
+    browser window is genuinely there waiting once Nate unlocks, which is
+    the same bet the existing headed retry already makes.
+
+    Fails CLOSED: any error determining this returns False. The cost of a
+    wrong False is a Telegram asking for a manual refresh; the cost of a
+    wrong True is a full INTERACTIVE_RETRY_TIMEOUT_SECONDS of the run's
+    budget spent on an invisible window.
+    """
+    try:
+        session_id = _current_session_id()
+        if session_id == 0:
+            logging.info(
+                "No interactive session: running in Windows session 0 (the "
+                "non-interactive services session)"
+            )
+            return False
+        station = _process_window_station_name()
+        if station.upper() != "WINSTA0":
+            logging.info(
+                f"No interactive session: attached to window station '{station}', not WinSta0"
+            )
+            return False
+        connect_state = _session_connect_state(session_id)
+        if connect_state != _WTS_CONNECTSTATE_ACTIVE:
+            logging.info(
+                f"No interactive session: session {session_id} WTSConnectState is "
+                f"{connect_state}, not WTSActive"
+            )
+            return False
+    except Exception as exc:
+        logging.error(
+            f"Could not determine whether an interactive Windows session exists "
+            f"({type(exc).__name__}) - assuming none and skipping the headed retry"
+        )
+        return False
+
+    logging.info(f"Interactive session detected (session {session_id}, station {station})")
+    return True
 
 
 def _run_interactive_retry():
@@ -531,6 +709,167 @@ def _run_pl_refresh_subprocess(run_id=None):
     return all_ok
 
 
+def _persisted_environment_value(name):
+    """The value the scheduled task will actually inherit at batch logon --
+    the account's persisted environment (HKCU\\Environment, then the machine
+    key), NOT this shell's process environment. Returns "" if unset."""
+    import winreg
+
+    for root, subkey in (
+        (winreg.HKEY_CURRENT_USER, r"Environment"),
+        (winreg.HKEY_LOCAL_MACHINE,
+         r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+    ):
+        try:
+            with winreg.OpenKey(root, subkey) as key:
+                value, _ = winreg.QueryValueEx(key, name)
+        except OSError:
+            continue
+        if value:
+            return str(value).strip()
+    return ""
+
+
+def _playwright_chromium_executable():
+    """The exact Chromium binary Playwright would launch for this account, or
+    None if it cannot be resolved. Authoritative by construction: it asks the
+    installed Playwright package rather than guessing at the on-disk layout,
+    which matters because several browser revisions can coexist in the cache
+    while only the revision pinned by the installed package is ever used.
+
+    Resolved through the VENV's own interpreter, not this one (Codex review
+    round 5): the scheduled task runs venv\\Scripts\\pythonw.exe, but
+    --install may well be run with the global Python 3.13 (see CLAUDE.md's
+    Architecture Constraints - both exist on this machine). Importing
+    playwright in-process would then validate whatever version and browser
+    cache THAT interpreter pins, which need not be the one the task uses.
+    Asking the venv directly makes the check about the task's environment."""
+    python_exe = PYTHONW.with_name("python.exe")
+    if not python_exe.exists():
+        logging.debug(f"No venv interpreter beside {PYTHONW} - cannot resolve Chromium")
+        return None
+
+    probe = (
+        "from playwright.sync_api import sync_playwright\n"
+        "pw = sync_playwright().start()\n"
+        "print(pw.chromium.executable_path)\n"
+        "pw.stop()\n"
+    )
+    try:
+        result = subprocess.run(
+            [str(python_exe), "-c", probe],
+            capture_output=True, text=True, timeout=120,
+        )
+    except Exception as exc:
+        logging.debug(f"Could not resolve Playwright's Chromium path: {type(exc).__name__}")
+        return None
+
+    if result.returncode != 0:
+        logging.debug(f"Playwright probe failed in the venv (rc={result.returncode})")
+        return None
+    lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+    return Path(lines[-1]) if lines else None
+
+
+def _installing_account_owns_task_resources():
+    """
+    Pre-registration guard (Codex review round 2, points 1 and 2). Comparing
+    the registered principal's SID to the installer's own SID, after the fact,
+    was not the check it looked like: both sides are whoever ran --install, so
+    a shell elevated as a DIFFERENT administrator satisfies it trivially --
+    and by then Register-ScheduledTask has already replaced the working task.
+
+    So check the thing that actually matters, and check it BEFORE touching
+    Task Scheduler: does the account running this installer genuinely own the
+    two resources the task needs under LogonType Password? Both are verified
+    by use, not by name:
+      - Playwright's browser binaries, resolved exactly the way Playwright
+        resolves them (PLAYWRIGHT_BROWSERS_PATH, else %LOCALAPPDATA%).
+      - The DPAPI-encrypted QuickBooks token store, verified by actually
+        decrypting it. Only the user whose master key sealed it can, which is
+        precisely the property that makes SYSTEM and S4U unusable here.
+
+    Returns a list of human-readable problems; empty means safe to register.
+    Never includes token contents or any decrypted material.
+    """
+    problems = []
+
+    # Codex review round 3, point 3: PLAYWRIGHT_BROWSERS_PATH read from THIS
+    # shell is not what the scheduled task will see. A batch logon inherits
+    # the account's persisted environment (registry), not a variable exported
+    # in the installer's console, so a shell-only override would let the
+    # pre-flight validate a location the task never uses.
+    # Compared in BOTH directions (Codex review round 4, point 1). An earlier
+    # version only flagged "set here but not persisted", which missed the
+    # inverse: a shell opened BEFORE the variable was persisted has it unset,
+    # so the check was skipped, _playwright_chromium_executable() validated
+    # the default cache, and the task would then use the persisted override
+    # that was never checked at all. Any disagreement means this pre-flight is
+    # not looking at the location the task will use, whichever way it differs.
+    process_override = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+    persisted_override = _persisted_environment_value("PLAYWRIGHT_BROWSERS_PATH")
+    if process_override != persisted_override:
+        problems.append(
+            "PLAYWRIGHT_BROWSERS_PATH differs between this shell "
+            f"({process_override or 'unset'}) and the account's persisted "
+            f"environment ({persisted_override or 'unset'}), which is what the "
+            "scheduled task actually inherits - this check would be validating "
+            "a different browser location than the task uses. Open a new shell "
+            "so the two agree, then re-run --install"
+        )
+
+    # Codex review round 3, point 2: globbing for a chromium-* directory
+    # proved nothing - it matches an empty directory, and this machine
+    # genuinely has several revisions present while Playwright launches only
+    # the ONE its installed package pins (chromium-1228 here, with
+    # chromium-1234 also on disk). Ask Playwright itself which executable it
+    # would launch, then check that exact file.
+    chromium = _playwright_chromium_executable()
+    if chromium is None:
+        problems.append(
+            "Playwright could not resolve a Chromium executable for this "
+            "account - the headless Prompt download would have no browser"
+        )
+    elif not chromium.is_file():
+        problems.append(
+            f"Playwright expects Chromium at {chromium} but no such file exists "
+            "for this account - run 'playwright install chromium'"
+        )
+
+    # Codex review round 3, point 1: previously an absent token store was
+    # tolerated, which left the only real identity check bypassable - a
+    # different administrator with any chromium-* directory would sail
+    # through. Decrypting this file is the one check that genuinely proves
+    # WHICH Windows account is installing, because only the sealing user's
+    # DPAPI master key can open it. Absent is therefore a refusal, not a pass:
+    # publication is gated on the P&L refresh anyway, so installing the daily
+    # task before QuickBooks is connected is not a state worth supporting.
+    try:
+        import qbo_token_store
+
+        # Resolved once and passed explicitly: _load_all()'s own default
+        # argument binds TOKEN_STORE_PATH at definition time, so calling it
+        # bare would check a different path than the .exists() beside it the
+        # moment anything rebinds the module attribute.
+        token_store_path = qbo_token_store.TOKEN_STORE_PATH
+        if not token_store_path.exists():
+            problems.append(
+                f"The QuickBooks token store ({token_store_path}) does not exist, "
+                "so there is no way to prove this is the right Windows account. "
+                "Connect QuickBooks first, then re-run --install"
+            )
+        else:
+            qbo_token_store._load_all(token_store_path)
+    except Exception as exc:
+        problems.append(
+            f"Could not decrypt the QuickBooks token store as this account "
+            f"({type(exc).__name__}) - it is DPAPI-sealed to a different Windows "
+            "user, so this is not the account the task must run as"
+        )
+
+    return problems
+
+
 def install_task():
     """Register the daily scheduled task, replacing any existing one.
 
@@ -554,12 +893,87 @@ def install_task():
     fully would need an application-level mutex or a Windows Job Object,
     which is real, Windows-specific engineering effort deliberately treated
     as out of scope for this step (see PLAN-REVIEW-LOG.md's Step 6 Round 2
-    entry) rather than being falsely claimed as solved here."""
+    entry) rather than being falsely claimed as solved here.
+
+    -LogonType Password (see TASK_LOGON_TYPE): the task previously used
+    LogonType Interactive, which only runs when growy is already logged on
+    -- after a reboot with nobody at the keyboard, the 08:00 trigger simply
+    never fired. Password runs it as growy regardless. Re-running
+    `python scheduled_pull.py --install` therefore no longer reverts the
+    task to Interactive.
+
+    The password is read straight into PowerShell via Read-Host
+    -AsSecureString and handed to Register-ScheduledTask, which stores it in
+    Task Scheduler's own credential vault. It is never passed on a command
+    line, never seen by this Python process, and never logged. It is NOT
+    plaintext-free end to end, and this docstring deliberately does not claim
+    that (Codex review, point 7): Register-ScheduledTask's -Password
+    parameter is typed [String], so the SecureString must be marshalled to a
+    BSTR and converted to an ordinary managed string. The BSTR is zeroed and
+    freed in a finally block and both variables are removed, but a .NET
+    String is immutable and cannot be wiped - it lives until garbage
+    collection. Because the prompt has to be visible and typeable, this is
+    the one subprocess call in this module that inherits the console instead
+    of capturing output.
+
+    Registration is guarded before and verified after, not assumed (Codex
+    review rounds 1 and 2). BEFORE anything is registered,
+    _installing_account_owns_task_resources() proves the installing account
+    actually owns the Playwright browsers and can decrypt the DPAPI token
+    store -- if it cannot, nothing is touched and the existing task survives
+    intact. AFTER registration, $ErrorActionPreference='Stop' turns a
+    non-terminating error into a real failure and the task is read back:
+    LogonType must be exactly the intended one, and the registered principal
+    must resolve to the same SID as the installer. The post-check alone was
+    not sufficient (round 2, points 1-2): it compares the installer to
+    itself, so it passes trivially for the wrong administrator, and it runs
+    only after the working task has already been replaced. It is kept as a
+    second line of defence against Task Scheduler registering something other
+    than what was asked for.
+
+    -Principal and -Password belong to different Register-ScheduledTask
+    parameter sets and cannot be combined, so the task is composed with
+    New-ScheduledTask first and registered via -InputObject, which does
+    accept -User/-Password."""
     if not PYTHONW.exists():
         print(f"Not found: {PYTHONW} - activate/create the venv first")
         return 1
 
+    print(
+        f"Registering '{TASK_NAME}' with LogonType {TASK_LOGON_TYPE} so it runs at "
+        f"{DAILY_TIME} even when nobody is logged in.\n"
+        "Windows will need the account password to store in its credential vault.\n"
+        "You may need to run this from an elevated (Administrator) terminal.\n"
+    )
+
+    print("Checking that this account owns what the task will need...")
+    problems = _installing_account_owns_task_resources()
+    if problems:
+        print("\nRefusing to register - this account cannot run the task successfully:\n")
+        for problem in problems:
+            print(f"  - {problem}")
+        print(
+            "\nThe task must run as the Windows account that owns the Playwright\n"
+            "browsers and the DPAPI-encrypted QuickBooks tokens. Re-run --install\n"
+            "from a shell logged in as THAT account - an elevated shell running as a\n"
+            "different administrator is the usual cause.\n"
+            f"Nothing was changed; the existing '{TASK_NAME}' task is untouched."
+        )
+        return 1
+    print("  OK - Playwright browsers and QuickBooks token store are both usable\n")
+
     command = (
+        '$ErrorActionPreference = "Stop"; '
+        '$me = [Security.Principal.WindowsIdentity]::GetCurrent(); '
+        # Codex review round 3, point 4: $env:USERNAME is just an inherited
+        # environment variable and need not resolve to the account this
+        # process is actually running as. Derive the account name from the
+        # access token's own SID instead, so -UserId/-User and the
+        # post-registration SID check all refer to one identity.
+        '$targetAccount = $me.User.Translate([Security.Principal.NTAccount]).Value; '
+        'Write-Host "This task will be registered to run as: $targetAccount  [$($me.User.Value)]"; '
+        'Write-Host "That account must be the one holding the Playwright browsers and the '
+        'DPAPI-encrypted QuickBooks tokens. Ctrl+C now if it is not."; '
         f'$action = New-ScheduledTaskAction -Execute "{PYTHONW}" '
         f'-Argument "scheduled_pull.py" -WorkingDirectory "{PROJECT_DIR}"; '
         f'$trigger = New-ScheduledTaskTrigger -Daily -At {DAILY_TIME}; '
@@ -581,21 +995,44 @@ def install_task():
         '-ExecutionTimeLimit (New-TimeSpan -Minutes 45) '
         '-MultipleInstances IgnoreNew '
         '-RestartCount 2 -RestartInterval (New-TimeSpan -Minutes 10); '
-        '$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited; '
-        f'Register-ScheduledTask -TaskName "{TASK_NAME}" -Action $action -Trigger $trigger '
-        '-Settings $settings -Principal $principal -Force | Out-Null; '
-        f'Get-ScheduledTask -TaskName "{TASK_NAME}" | Select-Object TaskName, State'
+        f'$principal = New-ScheduledTaskPrincipal -UserId $targetAccount -LogonType {TASK_LOGON_TYPE} -RunLevel Limited; '
+        '$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal; '
+        '$secure = Read-Host -Prompt "Windows password for $targetAccount" -AsSecureString; '
+        '$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure); '
+        'try { '
+        '  $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr); '
+        f'  Register-ScheduledTask -TaskName "{TASK_NAME}" -InputObject $task '
+        '    -User $targetAccount -Password $plain -Force | Out-Null; '
+        '} finally { '
+        '  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr); '
+        '  Remove-Variable plain, secure -ErrorAction SilentlyContinue; '
+        '}; '
+        f'$registered = Get-ScheduledTask -TaskName "{TASK_NAME}"; '
+        f'if ($registered.Principal.LogonType -ne "{TASK_LOGON_TYPE}") {{ '
+        f'  throw "VERIFICATION FAILED: LogonType is $($registered.Principal.LogonType), '
+        f'expected {TASK_LOGON_TYPE} - the task would still only run while logged in" }}; '
+        '$registeredSid = (New-Object Security.Principal.NTAccount($registered.Principal.UserId))'
+        '.Translate([Security.Principal.SecurityIdentifier]).Value; '
+        'if ($registeredSid -ne $me.User.Value) { '
+        '  throw "VERIFICATION FAILED: task registered for SID $registeredSid but the '
+        'installer is running as $($me.User.Value) - DPAPI and Playwright would break" }; '
+        'Write-Host ""; '
+        'Write-Host "VERIFIED: LogonType=$($registered.Principal.LogonType) '
+        'UserId=$($registered.Principal.UserId) SID=$registeredSid State=$($registered.State)"'
     )
     result = subprocess.run(
         ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
-        capture_output=True,
-        text=True,
-        timeout=120,
+        timeout=300,
     )
-    print(result.stdout.strip() or result.stderr.strip())
     if result.returncode != 0:
         return 1
-    print(f"\nRegistered '{TASK_NAME}' - daily at {DAILY_TIME}, logged to {LOG_FILE}")
+    print(
+        f"\nRegistered '{TASK_NAME}' - daily at {DAILY_TIME}, LogonType {TASK_LOGON_TYPE}, "
+        f"logged to {LOG_FILE}\n"
+        "It will now run whether or not you are logged in. If you ever change this "
+        "Windows account's password, re-run --install so Task Scheduler's stored "
+        "copy matches."
+    )
     return 0
 
 
@@ -633,20 +1070,43 @@ def _run_pull_locked():
         path = download_report(all_time=True, headless=True, retry_headed=False)
         load_into_duckdb(path)
     except SessionExpired:
-        logging.error("Prompt session expired - trying one bounded interactive retry")
-        if not _run_interactive_retry():
-            logging.error("Interactive retry also failed or timed out")
+        if not _interactive_session_available():
+            logging.error(
+                "Prompt session expired and no interactive Windows session is available "
+                "- NOT launching the headed retry (its browser window would open on a "
+                "desktop nobody can see or click, and would only burn the run's budget "
+                "before being killed). Failing the Prompt pull closed"
+            )
             prompt_notify_message = (
-                "ART: the Prompt EMR session expired and the automatic interactive "
-                "retry also failed or timed out, so today's pull was skipped and "
-                "nothing was published. The data is now going stale. RDP into the "
-                "PC and run:\n\n"
+                "ART: the Prompt EMR session expired and this run had no interactive "
+                "Windows desktop available (nobody logged in, a disconnected RDP "
+                "session, or the task running non-interactively), so the automatic "
+                "login retry was skipped - a browser window with no attached desktop "
+                "has no one to click it. Today's pull was skipped and nothing was "
+                "published. The data is now going stale. RDP into the PC and run:\n\n"
                 f"{MANUAL_COMMAND}\n\n"
                 "Click 'Verify you are human', then LOG IN. That re-caches the session "
-                "and the daily pulls resume on their own."
+                "and the daily pulls resume on their own.\n\n"
+                f"First check Task Scheduler that '{TASK_NAME}' is not mid-run - it can "
+                "still be retrying. The manual command above does not take the run lock, "
+                "so running it alongside a live attempt can race the session file and "
+                "the database."
             )
-        # Interactive retry succeeded - prompt_report_downloader.py already
-        # loaded the data into DuckDB itself. Do not run headless again.
+        else:
+            logging.error("Prompt session expired - trying one bounded interactive retry")
+            if not _run_interactive_retry():
+                logging.error("Interactive retry also failed or timed out")
+                prompt_notify_message = (
+                    "ART: the Prompt EMR session expired and the automatic interactive "
+                    "retry also failed or timed out, so today's pull was skipped and "
+                    "nothing was published. The data is now going stale. RDP into the "
+                    "PC and run:\n\n"
+                    f"{MANUAL_COMMAND}\n\n"
+                    "Click 'Verify you are human', then LOG IN. That re-caches the session "
+                    "and the daily pulls resume on their own."
+                )
+            # Interactive retry succeeded - prompt_report_downloader.py already
+            # loaded the data into DuckDB itself. Do not run headless again.
     except Exception as exc:
         logging.exception("Scheduled pull failed")
         # Step 8 review finding: this exception can originate from

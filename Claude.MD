@@ -142,6 +142,73 @@ Facility filter: exclude `139591 - CAMPUS CLINICS` (per BUSINESS_RULES.md).
 - The relocated `streamlit.exe` launcher exits immediately on this host, so the supervisor invokes `venv\Scripts\python.exe -m streamlit` by full path.
 - RDP is used when Prompt EMR requires an interactive login or verification step.
 
+### Phase 9 — Unattended Scheduling (session 2026-08-12/13) — CODE COMPLETE, **NOT INSTALLED**
+
+**Status: awaiting Nate's approval to install. Do not run `--install` without asking.**
+
+Goal: `ARTPromptPull` must fire at 08:00 even when `growy` is not
+interactively logged in after a reboot. Previously the task used `LogonType
+Interactive`, so a logged-out reboot silently skipped the entire daily
+pipeline.
+
+The code in `scheduled_pull.py` and `tests/test_scheduled_pull.py` is finished
+and tested. **The live scheduled task is still `LogonType Interactive` —
+nothing has been registered.** Changes were uncommitted as of 2026-08-13.
+
+Design record (read both before touching any of this — they record why several
+obvious-looking alternatives were rejected):
+- `PLAN-TASK-LOGON-NONINTERACTIVE.md` — the plan
+- `PLAN-REVIEW-LOG-TASK-LOGON-NONINTERACTIVE.md` — 5-round Codex adversarial review
+
+**Chosen logon type: `Password`** (`TASK_LOGON_TYPE` in `scheduled_pull.py`).
+Runs as growy via a real batch logon using a credential stored in Task
+Scheduler's vault.
+- **Not SYSTEM** — its `%LOCALAPPDATA%` has no Playwright browsers, and it
+  cannot decrypt the user-scoped DPAPI token store.
+- **Not S4U** — this is the trap. "Do not store password" keeps the growy
+  identity so it looks safe, but the token carries no credential material, so
+  `CryptUnprotectData` on `data/qbo_tokens.enc` fails and QuickBooks breaks
+  silently on every run while Prompt keeps working.
+- **Not `InteractiveOrPassword`** — Microsoft documents it as legacy and not
+  recommended; it does not reliably deliver the interactive-token behavior.
+
+**What was added:**
+- `_interactive_session_available()` — gates the headed Chromium retry on
+  session ≠ 0 **and** window station `WinSta0` **and** `WTSActive`. Fails
+  closed. With no desktop, the retry is skipped entirely and a distinct
+  Telegram asks for a manual session refresh.
+- `_installing_account_owns_task_resources()` — pre-registration guard that
+  proves the installing account owns Chromium (resolved via the **venv's**
+  interpreter asking Playwright directly, not a `chromium-*` glob) and can
+  **decrypt** the DPAPI token store. Refuses before Task Scheduler is touched.
+- Installer hardening: password via `Read-Host -AsSecureString`, identity
+  derived from the access token's SID (never `$env:USERNAME`),
+  `$ErrorActionPreference='Stop'`, post-registration assertions.
+
+Preserved untouched: run locking, unconditional QuickBooks P&L refresh,
+publication gating, timeouts, taskkill process-tree cleanup, Telegram
+notifications, `StartWhenAvailable`, `MultipleInstances IgnoreNew`, 45-minute
+`ExecutionTimeLimit`, restart behavior.
+
+**Three open decisions Nate has not yet answered:**
+1. Reinstalling also moves `ExecutionTimeLimit` from the installed `PT30M` to
+   the source's `PT45M`.
+2. `RestartCount 2` now bites sooner — the no-session path fails fast instead
+   of burning 900s, so one expired session can produce up to 3 Telegrams and
+   3 P&L cycles.
+3. Under `Password` the scheduled run is always session 0, so the headed retry
+   only ever fires on **manual** runs, even when Nate is at the PC.
+
+Also note: the Codex loop ended at its 5-round cap: the final accepted fix
+(venv-anchored Chromium resolution) was not re-reviewed. No disagreement
+outstanding, just no confirmation pass.
+
+**Known pre-existing test failure, unrelated:**
+`tests/test_qbo_config.py::test_load_config_success_sandbox` fails with
+`assert 'Cash' == 'Accrual'` because `qbo_config.py` calls `load_dotenv()` at
+module scope and the local `.env` leaks `QBO_ACCOUNTING_METHOD=Cash`. Confirmed
+to fail identically with unrelated work stashed. Suite: 733 passed, 1 failed.
+
 ## Architecture Constraints
 - Single user (Nate), local machine (Windows 11, RTX 4090, Python 3.13 global)
 - Venv at `venv/` — always activate before running scripts
@@ -156,6 +223,12 @@ Facility filter: exclude `139591 - CAMPUS CLINICS` (per BUSINESS_RULES.md).
 ---
 
 ## Immediate Next Steps
+0. **Approve (or decline) the ARTPromptPull install** — see Phase 9 above. The
+   code is finished and tested; the task is still `LogonType Interactive` and
+   will keep skipping 08:00 runs after a logged-out reboot until it is
+   installed. Needs Nate's Windows/MSA password and probably an elevated
+   terminal: `python scheduled_pull.py --install`. Answer the three open
+   decisions first. Changes were uncommitted as of 2026-08-13.
 1. **Fresh AMD export (Nate)** — amd_billing is stale (loaded 2026-05-06, service dates through 2026-04-22). Export full history from AMD → dashboard Tab 3 or `python db_cache.py --amd-billing FILE`. This is the payment truth for all commercial + all May–Aug 2025 billing.
 2. **Notification triggers** — decide recipients (same as send_unbilled_report?), Chat webhook availability, and dedup design; then build the per-run follow-up alert and monthly lien email (both currently manual/dry-run only).
 3. **Greeley QuickBooks pull** — Nate switches the connector to ART Greeley LLC, then pull 18mo P&L, confirm Greeley-only categories in `quickbooks_pl_loader.py`

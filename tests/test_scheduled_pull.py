@@ -46,6 +46,31 @@ def _isolated_pl_retrieval_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db_cache, "connect", lambda: duckdb.connect(db_path))
 
 
+@pytest.fixture(autouse=True)
+def _assume_interactive_session(monkeypatch):
+    """The SessionExpired path now gates _run_interactive_retry() on
+    _interactive_session_available(), which inspects the REAL Windows session
+    of whoever is running pytest. Without pinning it, every test covering that
+    path silently passes only because a developer happens to run pytest from a
+    logged-in desktop, and flips to failing when the same suite runs from the
+    scheduled task, a CI agent, or over a disconnected RDP session -- verified,
+    not hypothetical: forcing it False fails
+    test_session_expired_then_interactive_retry_succeeds_skips_headless_rerun.
+
+    Defaults to True so every pre-existing test keeps exercising exactly the
+    behavior it was written for. The tests that care about the gate itself
+    request this fixture by name to get the real implementation back.
+
+    It yields the real function rather than a module-level constant captured
+    at import time (Codex review round 2, point 5): resolved here, at fixture
+    setup, it is by construction whatever scheduled_pull currently exposes, so
+    the gate tests cannot silently drift away from the code under test if that
+    attribute is ever rebound."""
+    real_gate = scheduled_pull._interactive_session_available
+    monkeypatch.setattr(scheduled_pull, "_interactive_session_available", lambda: True)
+    return real_gate
+
+
 # ---------------------------------------------------------------------------
 # _run_lock() / run_pull()'s overlap protection (Step 6 Round 3 review
 # finding: -MultipleInstances IgnoreNew and DuckDB's own write lock do not,
@@ -893,3 +918,465 @@ def test_interactive_retry_popen_start_failure_does_not_raise(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
     assert scheduled_pull._run_interactive_retry() is False  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# _interactive_session_available() - the gate that stops the scheduled task
+# from opening a headed Chromium window nobody can reach once the task runs
+# under LogonType Password with growy logged out
+# ---------------------------------------------------------------------------
+
+def _pin_session(monkeypatch, session_id, station, connect_state):
+    monkeypatch.setattr(scheduled_pull, "_current_session_id", lambda: session_id)
+    monkeypatch.setattr(scheduled_pull, "_process_window_station_name", lambda: station)
+    monkeypatch.setattr(scheduled_pull, "_session_connect_state", lambda _sid: connect_state)
+
+
+@pytest.mark.parametrize(
+    "session_id, station, connect_state, expected, why",
+    [
+        (0, "Service-0x0-3e7$", 0, False, "session 0 is the services session"),
+        (2, "Service-0x0-1f4a$", 0, False, "batch logon gets a private window station"),
+        (2, "WinSta0", 4, False, "disconnected RDP still owns a real WinSta0"),
+        (1, "WinSta0", 0, True, "normal attached desktop"),
+        (1, "winsta0", 0, True, "station name comparison is case-insensitive"),
+    ],
+)
+def test_interactive_session_gate_decides_correctly(
+    monkeypatch, _assume_interactive_session, session_id, station, connect_state, expected, why
+):
+    real_gate = _assume_interactive_session
+    _pin_session(monkeypatch, session_id, station, connect_state)
+    assert real_gate() is expected, why
+
+
+@pytest.mark.parametrize("failing", ["_current_session_id", "_process_window_station_name",
+                                     "_session_connect_state"])
+def test_interactive_session_gate_fails_closed_on_win32_error(
+    monkeypatch, _assume_interactive_session, failing
+):
+    """Any Win32 failure must yield False, never an exception and never a
+    permissive True: a wrong False costs one Telegram asking for a manual
+    refresh, a wrong True costs the full 900s interactive-retry budget spent
+    on an invisible window."""
+    _pin_session(monkeypatch, 1, "WinSta0", 0)
+
+    def boom(*a, **kw):
+        raise OSError("simulated Win32 failure")
+
+    monkeypatch.setattr(scheduled_pull, failing, boom)
+
+    assert _assume_interactive_session() is False
+
+
+def test_win32_accessors_work_against_the_real_api():
+    """A pure smoke test of the ctypes plumbing, and deliberately nothing
+    more (Codex review round 2, point 6): the decision-table tests above pin
+    all three accessors, so only this touches the real Win32 calls, and only
+    this would catch a wrong argtype/restype -- an HWINSTA truncated to 32
+    bits, or a mis-sized WTS buffer. It asserts shape and plausibility, not a
+    fixed verdict, because the correct verdict legitimately differs between a
+    developer desktop and a service context. The semantics are tested by the
+    decision table, not here."""
+    session_id = scheduled_pull._current_session_id()
+    station = scheduled_pull._process_window_station_name()
+    connect_state = scheduled_pull._session_connect_state(session_id)
+
+    assert isinstance(session_id, int) and session_id >= 0
+    # A truncated HWINSTA would fail the call outright or yield an empty name.
+    assert isinstance(station, str) and station.strip()
+    assert isinstance(connect_state, int) and 0 <= connect_state <= 9
+
+
+def test_interactive_session_gate_is_consistent_with_its_own_inputs(_assume_interactive_session):
+    """Separate from the smoke test above: whatever the real machine reports,
+    the gate's verdict must follow from those three values by its documented
+    rule. Holds identically on a desktop and under a service."""
+    real_gate = _assume_interactive_session
+    session_id = scheduled_pull._current_session_id()
+    station = scheduled_pull._process_window_station_name()
+    connect_state = scheduled_pull._session_connect_state(session_id)
+
+    expected = (
+        session_id != 0
+        and station.upper() == "WINSTA0"
+        and connect_state == scheduled_pull._WTS_CONNECTSTATE_ACTIVE
+    )
+    assert real_gate() is expected
+
+
+def test_session_expired_with_no_interactive_session_skips_retry_and_still_runs_pl(monkeypatch):
+    """The core of this change: with no desktop available the headed retry
+    must NOT be launched, but the QuickBooks P&L refresh must still be
+    attempted (it is an independent data source), nothing may publish, and
+    Nate must be told to refresh the session by hand."""
+    monkeypatch.setattr(scheduled_pull, "_interactive_session_available", lambda: False)
+    monkeypatch.setattr(
+        scheduled_pull, "download_report",
+        lambda **kw: (_ for _ in ()).throw(SessionExpired()),
+    )
+    monkeypatch.setattr(scheduled_pull, "load_into_duckdb", lambda p: pytest.fail("must not load"))
+    monkeypatch.setattr(
+        scheduled_pull, "_run_interactive_retry",
+        lambda: pytest.fail("must not open a browser with no desktop to open it on"),
+    )
+    pl_calls = []
+    monkeypatch.setattr(
+        scheduled_pull, "_pl_refresh_ok",
+        lambda run_id=None: pl_calls.append(run_id) or True,
+    )
+    notified = []
+    monkeypatch.setattr(scheduled_pull, "notify", notified.append)
+    monkeypatch.setattr(
+        publish_after_pull, "run",
+        lambda notify_fn=None: pytest.fail("must not publish when the pull failed"),
+    )
+
+    rc = scheduled_pull.run_pull()
+
+    assert rc == 1
+    assert len(pl_calls) == 1 and pl_calls[0]  # P&L still attempted, with the run_id
+    assert len(notified) == 1
+    assert "expired" in notified[0].lower()
+    assert scheduled_pull.MANUAL_COMMAND in notified[0]
+
+
+def test_no_interactive_session_notification_mentions_pl_failure_too(monkeypatch):
+    monkeypatch.setattr(scheduled_pull, "_interactive_session_available", lambda: False)
+    monkeypatch.setattr(
+        scheduled_pull, "download_report",
+        lambda **kw: (_ for _ in ()).throw(SessionExpired()),
+    )
+    monkeypatch.setattr(scheduled_pull, "_run_interactive_retry", lambda: pytest.fail("no browser"))
+    monkeypatch.setattr(scheduled_pull, "_pl_refresh_ok", lambda run_id=None: False)
+    notified = []
+    monkeypatch.setattr(scheduled_pull, "notify", notified.append)
+    monkeypatch.setattr(publish_after_pull, "run", lambda notify_fn=None: pytest.fail("no publish"))
+
+    assert scheduled_pull.run_pull() == 1
+    assert len(notified) == 1
+    assert "QuickBooks P&L" in notified[0]
+
+
+def test_manual_command_is_absolute_so_it_works_from_any_rdp_shell():
+    """The notification tells Nate to paste this after RDPing in, and an RDP
+    shell opens in his home directory, not the project directory."""
+    from pathlib import Path
+
+    command = scheduled_pull.MANUAL_COMMAND
+    assert Path(command.split()[0]).is_absolute()
+    assert "prompt_report_downloader.py" in command
+    assert "--all-time" in command and "--load" in command
+
+
+def test_install_task_registers_a_logon_type_that_survives_a_logged_out_reboot():
+    """Regression guard for the whole point of this change: --install must
+    never quietly go back to Interactive, which only fires while growy is
+    already logged in."""
+    assert scheduled_pull.TASK_LOGON_TYPE == "Password"
+
+
+def test_install_task_command_asserts_what_it_registered(monkeypatch, tmp_path):
+    """A non-terminating PowerShell failure must not let install_task()
+    report success while the old Interactive task is still in place."""
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["command"] = cmd[-1]
+        captured["kwargs"] = kwargs
+
+        class _R:
+            returncode = 0
+
+        return _R()
+
+    monkeypatch.setattr(scheduled_pull.subprocess, "run", fake_run)
+    fake_pythonw = tmp_path / "pythonw.exe"
+    fake_pythonw.write_text("")
+    monkeypatch.setattr(scheduled_pull, "PYTHONW", fake_pythonw)
+    monkeypatch.setattr(scheduled_pull, "_installing_account_owns_task_resources", lambda: [])
+
+    assert scheduled_pull.install_task() == 0
+
+    command = captured["command"]
+    assert '$ErrorActionPreference = "Stop"' in command
+    assert f'-LogonType {scheduled_pull.TASK_LOGON_TYPE}' in command
+    assert "VERIFICATION FAILED" in command  # it throws rather than printing
+    assert "Translate([Security.Principal.SecurityIdentifier])" in command
+    # Settings that must survive this change untouched.
+    assert "-StartWhenAvailable" in command
+    assert "-MultipleInstances IgnoreNew" in command
+    assert "-ExecutionTimeLimit (New-TimeSpan -Minutes 45)" in command
+    assert "-RestartCount 2" in command
+    assert "-RestartInterval (New-TimeSpan -Minutes 10)" in command
+    assert "-RunLevel Limited" in command
+    # The password must never reach a command line or this Python process.
+    assert "Read-Host" in command and "-AsSecureString" in command
+    assert "ZeroFreeBSTR" in command
+    # Console must be inherited so the password prompt is visible/typeable.
+    assert "capture_output" not in captured["kwargs"]
+
+
+def test_install_task_returns_failure_when_powershell_fails(monkeypatch, tmp_path):
+    """The post-registration verification throws inside PowerShell, which
+    surfaces here only as a non-zero exit code -- install_task() must not
+    report success (Codex review round 2, point 3)."""
+    class _R:
+        returncode = 1
+
+    monkeypatch.setattr(scheduled_pull.subprocess, "run", lambda *a, **kw: _R())
+    fake_pythonw = tmp_path / "pythonw.exe"
+    fake_pythonw.write_text("")
+    monkeypatch.setattr(scheduled_pull, "PYTHONW", fake_pythonw)
+    monkeypatch.setattr(scheduled_pull, "_installing_account_owns_task_resources", lambda: [])
+
+    assert scheduled_pull.install_task() == 1
+
+
+def test_install_task_refuses_before_registering_when_account_lacks_resources(
+    monkeypatch, tmp_path
+):
+    """The whole point of the pre-flight (Codex review round 2, points 1-2):
+    a wrong-account install must be stopped BEFORE Register-ScheduledTask
+    replaces the working task, not detected afterwards."""
+    fake_pythonw = tmp_path / "pythonw.exe"
+    fake_pythonw.write_text("")
+    monkeypatch.setattr(scheduled_pull, "PYTHONW", fake_pythonw)
+    monkeypatch.setattr(
+        scheduled_pull, "_installing_account_owns_task_resources",
+        lambda: ["No Playwright Chromium found for this account at C:\\nope"],
+    )
+    monkeypatch.setattr(
+        scheduled_pull.subprocess, "run",
+        lambda *a, **kw: pytest.fail("must not touch Task Scheduler for a wrong account"),
+    )
+
+    assert scheduled_pull.install_task() == 1
+
+
+@pytest.fixture
+def _healthy_preflight(monkeypatch, tmp_path):
+    """Everything the pre-flight checks, in a passing state, so each test
+    below can break exactly one thing."""
+    chromium = tmp_path / "ms-playwright" / "chromium-1228" / "chrome-win64" / "chrome.exe"
+    chromium.parent.mkdir(parents=True)
+    chromium.write_text("")
+    monkeypatch.setattr(scheduled_pull, "_playwright_chromium_executable", lambda: chromium)
+    monkeypatch.setattr(scheduled_pull, "_persisted_environment_value", lambda _n: "")
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    return chromium
+
+
+def test_preflight_passes_when_everything_is_in_order(_healthy_preflight, monkeypatch, tmp_path):
+    import qbo_token_store
+
+    store = tmp_path / "qbo_tokens.enc"
+    store.write_bytes(b"x")
+    monkeypatch.setattr(qbo_token_store, "TOKEN_STORE_PATH", store)
+    monkeypatch.setattr(qbo_token_store, "_load_all", lambda path=None: {})
+
+    assert scheduled_pull._installing_account_owns_task_resources() == []
+
+
+def test_preflight_flags_the_pinned_chromium_being_absent(
+    _healthy_preflight, monkeypatch, tmp_path
+):
+    """Several browser revisions can coexist in the cache while Playwright
+    launches only the one its installed package pins -- so the check is on
+    that exact file, not on any chromium-* directory existing."""
+    import qbo_token_store
+
+    store = tmp_path / "qbo_tokens.enc"
+    store.write_bytes(b"x")
+    monkeypatch.setattr(qbo_token_store, "TOKEN_STORE_PATH", store)
+    monkeypatch.setattr(qbo_token_store, "_load_all", lambda path=None: {})
+    monkeypatch.setattr(
+        scheduled_pull, "_playwright_chromium_executable",
+        lambda: tmp_path / "ms-playwright" / "chromium-9999" / "chrome-win64" / "chrome.exe",
+    )
+
+    problems = scheduled_pull._installing_account_owns_task_resources()
+
+    assert any("no such file exists" in p for p in problems)
+
+
+def test_preflight_flags_unresolvable_playwright(_healthy_preflight, monkeypatch, tmp_path):
+    import qbo_token_store
+
+    store = tmp_path / "qbo_tokens.enc"
+    store.write_bytes(b"x")
+    monkeypatch.setattr(qbo_token_store, "TOKEN_STORE_PATH", store)
+    monkeypatch.setattr(qbo_token_store, "_load_all", lambda path=None: {})
+    monkeypatch.setattr(scheduled_pull, "_playwright_chromium_executable", lambda: None)
+
+    problems = scheduled_pull._installing_account_owns_task_resources()
+
+    assert any("could not resolve" in p.lower() for p in problems)
+
+
+def test_preflight_flags_a_shell_only_browsers_path_override(
+    _healthy_preflight, monkeypatch, tmp_path
+):
+    """A batch logon inherits the account's PERSISTED environment, not a
+    variable exported in the installer's console -- so a shell-only override
+    would validate a location the scheduled task never uses."""
+    import qbo_token_store
+
+    store = tmp_path / "qbo_tokens.enc"
+    store.write_bytes(b"x")
+    monkeypatch.setattr(qbo_token_store, "TOKEN_STORE_PATH", store)
+    monkeypatch.setattr(qbo_token_store, "_load_all", lambda path=None: {})
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "shell-only"))
+    monkeypatch.setattr(scheduled_pull, "_persisted_environment_value", lambda _n: "")
+
+    problems = scheduled_pull._installing_account_owns_task_resources()
+
+    assert any("differs between this shell" in p for p in problems)
+
+
+def test_preflight_flags_a_persisted_override_a_stale_shell_cannot_see(
+    _healthy_preflight, monkeypatch, tmp_path
+):
+    """The inverse of the case above, and the one an earlier version missed:
+    a shell opened BEFORE the variable was persisted has it unset, so a
+    one-directional check skipped entirely -- validating the default cache
+    while the task would use the persisted override."""
+    import qbo_token_store
+
+    store = tmp_path / "qbo_tokens.enc"
+    store.write_bytes(b"x")
+    monkeypatch.setattr(qbo_token_store, "TOKEN_STORE_PATH", store)
+    monkeypatch.setattr(qbo_token_store, "_load_all", lambda path=None: {})
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    monkeypatch.setattr(
+        scheduled_pull, "_persisted_environment_value",
+        lambda _n: str(tmp_path / "persisted-but-invisible-here"),
+    )
+
+    problems = scheduled_pull._installing_account_owns_task_resources()
+
+    assert any("differs between this shell" in p for p in problems)
+
+
+def test_preflight_accepts_a_persisted_browsers_path_override(
+    _healthy_preflight, monkeypatch, tmp_path
+):
+    """The same override IS fine when it is persisted for the account, since
+    the scheduled task will then inherit it."""
+    import qbo_token_store
+
+    store = tmp_path / "qbo_tokens.enc"
+    store.write_bytes(b"x")
+    monkeypatch.setattr(qbo_token_store, "TOKEN_STORE_PATH", store)
+    monkeypatch.setattr(qbo_token_store, "_load_all", lambda path=None: {})
+    override = str(tmp_path / "shared-browsers")
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", override)
+    monkeypatch.setattr(scheduled_pull, "_persisted_environment_value", lambda _n: override)
+
+    assert scheduled_pull._installing_account_owns_task_resources() == []
+
+
+def test_preflight_flags_a_token_store_sealed_to_another_user(
+    _healthy_preflight, monkeypatch, tmp_path
+):
+    """The check that actually distinguishes the right Windows account from
+    the wrong one: only the sealing user's DPAPI master key can decrypt it.
+    Uses the REAL _load_all against undecryptable bytes."""
+    import qbo_token_store
+
+    sealed = tmp_path / "qbo_tokens.enc"
+    sealed.write_bytes(b"not decryptable by anyone")
+    monkeypatch.setattr(qbo_token_store, "TOKEN_STORE_PATH", sealed)
+
+    problems = scheduled_pull._installing_account_owns_task_resources()
+
+    assert any("decrypt" in p for p in problems)
+    # The failure must never leak ciphertext or decrypted material.
+    assert not any("not decryptable by anyone" in p for p in problems)
+
+
+def test_preflight_refuses_when_the_token_store_is_absent(
+    _healthy_preflight, monkeypatch, tmp_path
+):
+    """Decrypting the store is the ONLY check that proves which Windows
+    account is installing. Tolerating its absence left the guard bypassable:
+    any account with a browser would pass. Publication is gated on the P&L
+    refresh anyway, so installing before QuickBooks is connected is not a
+    state worth supporting."""
+    import qbo_token_store
+
+    monkeypatch.setattr(qbo_token_store, "TOKEN_STORE_PATH", tmp_path / "absent.enc")
+
+    problems = scheduled_pull._installing_account_owns_task_resources()
+
+    assert any("does not exist" in p for p in problems)
+
+
+def test_playwright_chromium_executable_resolves_on_this_machine():
+    """Smoke test of the real Playwright resolution path -- the pre-flight
+    tests above pin this helper, so only this would catch it silently
+    returning None (which would make every install refuse)."""
+    chromium = scheduled_pull._playwright_chromium_executable()
+
+    assert chromium is not None
+    assert chromium.is_file(), f"Playwright pins {chromium}, which is not installed"
+
+
+def test_playwright_resolution_uses_the_venv_not_the_running_interpreter(monkeypatch, tmp_path):
+    """The task runs venv\\Scripts\\pythonw.exe, but --install may be run with
+    the global Python. Resolving in-process would validate whichever
+    Playwright THAT interpreter pins, not the one the task actually uses."""
+    captured = {}
+
+    class _R:
+        returncode = 0
+        stdout = str(tmp_path / "chrome.exe")
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["exe"] = cmd[0]
+        return _R()
+
+    fake_pythonw = tmp_path / "venv" / "Scripts" / "pythonw.exe"
+    fake_pythonw.parent.mkdir(parents=True)
+    fake_pythonw.write_text("")
+    (fake_pythonw.parent / "python.exe").write_text("")
+    monkeypatch.setattr(scheduled_pull, "PYTHONW", fake_pythonw)
+    monkeypatch.setattr(scheduled_pull.subprocess, "run", fake_run)
+
+    result = scheduled_pull._playwright_chromium_executable()
+
+    assert captured["exe"] == str(fake_pythonw.parent / "python.exe")
+    assert result == tmp_path / "chrome.exe"
+
+
+def test_playwright_resolution_returns_none_without_a_venv_interpreter(monkeypatch, tmp_path):
+    monkeypatch.setattr(scheduled_pull, "PYTHONW", tmp_path / "nowhere" / "pythonw.exe")
+    monkeypatch.setattr(
+        scheduled_pull.subprocess, "run",
+        lambda *a, **kw: pytest.fail("must not probe without a venv interpreter"),
+    )
+
+    assert scheduled_pull._playwright_chromium_executable() is None
+
+
+def test_persisted_environment_value_reads_the_registry_not_the_process():
+    """It must not fall back to os.environ -- that is the entire point."""
+    import os as _os
+    import uuid as _uuid
+
+    name = f"ART_TEST_{_uuid.uuid4().hex[:8]}"
+    _os.environ[name] = "process-only"
+    try:
+        assert scheduled_pull._persisted_environment_value(name) == ""
+    finally:
+        del _os.environ[name]
+
+
+def test_install_task_refuses_when_the_venv_is_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(scheduled_pull, "PYTHONW", tmp_path / "does_not_exist.exe")
+    monkeypatch.setattr(
+        scheduled_pull.subprocess, "run",
+        lambda *a, **kw: pytest.fail("must not touch Task Scheduler without a venv"),
+    )
+    assert scheduled_pull.install_task() == 1
